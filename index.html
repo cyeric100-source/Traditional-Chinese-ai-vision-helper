@@ -3,57 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>視障輔助 AI 助理 (全能版)</title>
+    <title>視障輔助 AI 助理 (專業版)</title>
+    <!-- 引入 Markdown 解析庫 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
-    <script>
-        window.onerror = function(msg, url, line) {
-            alert("系統錯誤：" + msg);
-            return false;
-        };
-    </script>
-
     <style>
         :root {
             --bg-color: #000000;
             --text-color: #FFFFFF;
-            --accent-color: #FFFF00;
-            --input-bg: #222222;
-            --border-color: #666666;
+            --accent-color: #FFFF00; /* 高對比黃色 */
+            --link-color: #88CCFF;
+            --input-bg: #1A1A1A;
+            --border-color: #555555;
             --button-bg: #FFFF00;
             --button-text: #000000;
             --focus-ring: 4px solid #FFFF00;
+            --error-bg: #440000;
         }
 
+        /* 基礎設定 */
         body {
-            font-family: system-ui, -apple-system, sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 10px;
-            font-size: 20px;
+            padding: 0;
+            font-size: 1.1rem; /* 加大字體 */
             line-height: 1.6;
         }
 
-        /* 焦點增強 */
-        *:focus {
-            outline: var(--focus-ring) !important;
-            outline-offset: 4px;
-            box-shadow: 0 0 10px var(--accent-color);
+        /* 略過導航連結 (給鍵盤使用者) */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--accent-color);
+            color: var(--button-text);
+            padding: 8px;
+            z-index: 1001;
+            text-decoration: none;
+            font-weight: bold;
         }
+        .skip-link:focus { top: 0; }
 
-        h1 { margin-bottom: 20px; text-align: center; }
-
+        /* 容器佈局 */
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
-            padding-bottom: 400px; /* 預留更多底部空間 */
+            padding: 10px 10px 250px 10px; /* 底部留白給固定控制區 */
         }
 
+        /* 焦點樣式 (全域強制) */
+        *:focus-visible {
+            outline: var(--focus-ring) !important;
+            outline-offset: 2px;
+            box-shadow: 0 0 15px rgba(255, 255, 0, 0.5);
+            border-radius: 4px;
+        }
+
+        h1, h2, h3 { color: var(--accent-color); margin-top: 1.5rem; }
+        
+        /* 設定區域 */
         details {
             background: #111;
             border: 2px solid var(--border-color);
-            padding: 15px;
+            padding: 10px;
             margin-bottom: 20px;
             border-radius: 8px;
         }
@@ -61,293 +75,487 @@
         summary {
             cursor: pointer;
             font-weight: bold;
-            font-size: 1.2em;
-            padding: 10px;
-            background: #333;
-            border-radius: 4px;
+            font-size: 1.2rem;
+            padding: 15px;
+            background: #222;
+            list-style: none; /* 隱藏預設三角形 */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
+        
+        summary::after { content: "▼"; font-size: 0.8em; margin-left: 10px; }
+        details[open] summary::after { content: "▲"; }
 
+        /* 表單元件 */
         label {
             display: block;
-            margin-top: 20px;
+            margin-top: 15px;
             font-weight: bold;
-            font-size: 1.1em;
+            color: #ddd;
         }
 
         input[type="text"], input[type="password"], textarea, select {
             width: 100%;
             padding: 15px;
-            margin-top: 10px;
+            margin-top: 8px;
             background: var(--input-bg);
             border: 2px solid var(--border-color);
             color: var(--text-color);
-            font-size: 20px;
-            border-radius: 8px;
+            font-size: 1.1rem;
+            border-radius: 6px;
             box-sizing: border-box;
         }
 
-        /* 底部控制區 */
-        .controls-wrapper {
-            position: fixed;
-            bottom: 0; left: 0; right: 0;
-            background: #000000;
-            padding: 15px;
-            border-top: 4px solid var(--accent-color);
-            z-index: 999;
-            max-height: 50vh;
-            overflow-y: auto;
+        /* 特別針對長指令輸入框優化 */
+        textarea#system-prompt {
+            font-family: monospace; /* 等寬字體方便編輯代碼或結構化文字 */
+            min-height: 300px;      /* 預設高度加大 */
+            line-height: 1.5;
+            white-space: pre-wrap;
         }
-        
-        #chat-form {
+
+        .char-count {
+            text-align: right;
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-top: 5px;
+        }
+
+        /* 按鈕樣式 */
+        .btn-group {
             display: flex;
-            flex-direction: column;
-            gap: 15px;
-            max-width: 800px;
-            margin: 0 auto;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
         }
 
         button {
             background-color: var(--button-bg);
             color: var(--button-text);
             border: 2px solid #fff;
-            padding: 15px;
-            font-size: 20px;
+            padding: 15px 20px;
+            font-size: 1.1rem;
             font-weight: bold;
             cursor: pointer;
-            width: 100%;
-            border-radius: 10px;
-            text-align: center;
-            min-height: 60px; /* 加大觸控區 */
+            border-radius: 8px;
+            flex: 1;
+            min-width: 120px;
+            touch-action: manipulation;
         }
 
         button.secondary {
-            background-color: #444;
+            background-color: #333;
             color: #fff;
-            border-color: #888;
+            border-color: #777;
         }
 
-        /* 上傳按鈕 */
-        .upload-btn-style {
-            background-color: #222;
-            color: #fff;
-            border: 2px dashed #fff;
-            white-space: pre-wrap; /* 允許換行 */
-        }
+        button:active { transform: scale(0.98); }
 
-        .search-toggle-container {
-            display: flex;
-            align-items: center;
-            background: #222;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #555;
-        }
-        
-        input[type="checkbox"] {
-            width: 30px;
-            height: 30px;
-            margin-right: 15px;
-        }
-
-        .visually-hidden {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border: 0;
-        }
-
+        /* 輸出區域 */
         .message {
-            background: #1a1a1a;
+            background: #111;
             padding: 20px;
             margin-bottom: 20px;
             border-radius: 8px;
-            border: 1px solid #444;
+            border-left: 5px solid var(--accent-color);
+            font-size: 1.15rem;
+        }
+        
+        .message.user { border-left-color: #0088ff; background: #0a0a1a; }
+        .message.error { border-left-color: #ff0000; background: var(--error-bg); }
+
+        /* Markdown 樣式修正 */
+        .markdown-body a { color: var(--link-color); text-decoration: underline; }
+        .markdown-body code { background: #333; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+        .markdown-body pre { background: #222; padding: 15px; overflow-x: auto; border-radius: 5px; }
+        .markdown-body ul, .markdown-body ol { padding-left: 1.5em; }
+
+        /* 底部控制區 (固定) */
+        .controls-wrapper {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(0, 0, 0, 0.95);
+            padding: 15px;
+            border-top: 3px solid var(--accent-color);
+            z-index: 999;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.8);
         }
 
-        .error-msg { background: #400; border: 2px solid #f00; }
-
-        .markdown-body h1, .markdown-body h2 { 
-            border-bottom: 1px solid #555; 
-            padding-bottom: 5px; margin-top: 1.5em; 
+        .input-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
-        .markdown-body a { color: #8cf; font-weight: bold; }
-        .markdown-body strong { color: var(--accent-color); }
 
-        .shortcut-hint {
-            font-size: 0.8em;
-            font-weight: normal;
-            color: #aaa;
+        /* 視覺隱藏 (但螢幕閱讀器可讀) */
+        .visually-hidden {
+            position: absolute;
+            width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0,0,0,0); border: 0;
         }
+
+        /* 搜尋開關樣式 */
+        .search-toggle {
+            display: flex;
+            align-items: center;
+            background: #222;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border: 1px solid #555;
+        }
+        .search-toggle input { width: 25px; height: 25px; margin-right: 10px; }
+
+        /* 載入動畫 */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px; height: 20px;
+            border: 3px solid rgba(255,255,0,0.3);
+            border-radius: 50%;
+            border-top-color: var(--accent-color);
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
     </style>
 </head>
 <body>
 
+<a href="#chat-output" class="skip-link">跳轉至對話內容</a>
+<a href="#user-input" class="skip-link">跳轉至輸入框</a>
+
 <div class="container">
-    <header>
-        <h1 tabindex="0">AI 視覺與聽覺助理</h1>
-        <p style="text-align:center; font-size: 0.9em; color:#aaa;">
-            支援圖片、錄音、PDF 文件與聯網搜尋
-        </p>
+    <header role="banner">
+        <h1 tabindex="-1">AI 視障輔助助理 (全能版)</h1>
+        <p style="text-align:center; color:#ccc;">支援 3000 字長指令 | 圖片/文件分析 | 聯網搜尋</p>
     </header>
 
     <!-- 設定區域 (AccessKey: S) -->
     <details id="settings-area">
-        <summary accesskey="s">
-            ⚙️ 設定選項 (快速鍵: Alt + S)
+        <summary accesskey="s" role="button" aria-expanded="false">
+            <span>⚙️ 系統設定與指令編輯 (Alt + S)</span>
         </summary>
-        <div>
-            <label for="api-key">Google Gemini API Key:</label>
-            <input type="password" id="api-key" placeholder="請貼上 AIza 開頭的金鑰">
+        <div style="padding-top: 15px;">
             
-            <button type="button" onclick="checkAndSaveKeys()" class="secondary" style="margin-top:15px;">
-                🔄 更新 Key 並檢查模型
-            </button>
-            
-            <label for="model-select">選擇 AI 模型:</label>
-            <select id="model-select">
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash (推薦)</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-            </select>
-            <div id="model-status" role="status" aria-live="polite"></div>
+            <section aria-labelledby="api-setting-heading">
+                <h3 id="api-setting-heading">API 連線設定</h3>
+                <label for="api-key">Google Gemini API Key:</label>
+                <input type="password" id="api-key" placeholder="貼上您的 AIza 開頭金鑰" autocomplete="off">
+                
+                <div class="btn-group">
+                    <button type="button" onclick="checkAndSaveKeys()" class="secondary">
+                        🔄 檢查金鑰並更新模型
+                    </button>
+                    <div style="flex:2">
+                        <label for="model-select" class="visually-hidden">選擇模型</label>
+                        <select id="model-select" aria-label="選擇 AI 模型">
+                            <option value="gemini-1.5-flash">Gemini 1.5 Flash (快速/推薦)</option>
+                            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (實驗性/更強)</option>
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro (深度分析)</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="model-status" role="status" aria-live="polite" style="margin-top:10px; color:var(--accent-color);"></div>
+            </section>
 
-            <label for="system-prompt">預設指令 (System Prompt):</label>
-            <textarea id="system-prompt"></textarea>
-            
-            <button type="button" onclick="saveSettings()" style="margin-top:15px;">
-                💾 儲存所有設定
-            </button>
-            <p id="save-status" role="status" aria-live="polite"></p>
+            <hr style="border-color:#333; margin: 20px 0;">
+
+            <section aria-labelledby="prompt-setting-heading">
+                <h3 id="prompt-setting-heading">預設指令編輯 (System Prompt)</h3>
+                <p style="font-size:0.9rem; color:#aaa;">在此處設定 AI 的角色、語氣與行為邏輯。支援長篇文字。</p>
+                
+                <label for="system-prompt" class="visually-hidden">預設指令內容</label>
+                <textarea id="system-prompt" rows="15" placeholder="輸入您的指令..." oninput="updateCharCount()"></textarea>
+                <div class="char-count" id="char-count-display">目前字數: 0</div>
+
+                <div class="btn-group">
+                    <button type="button" onclick="saveSettings()" aria-label="儲存所有設定">
+                        💾 儲存設定
+                    </button>
+                    <button type="button" onclick="restoreDefaultPrompt()" class="secondary" aria-label="恢復原廠預設指令">
+                        ↩️ 恢復預設值
+                    </button>
+                    <button type="button" onclick="clearPrompt()" class="secondary" style="background:#440000;" aria-label="清空指令">
+                        🗑️ 清空
+                    </button>
+                </div>
+                <p id="save-status" role="status" aria-live="polite" style="text-align:center; margin-top:10px;"></p>
+            </section>
         </div>
     </details>
 
-    <!-- 輸出區域 -->
-    <main id="chat-output" aria-live="polite">
+    <!-- 對話輸出區域 -->
+    <main id="chat-output" role="log" aria-live="polite" aria-atomic="false">
         <div class="message">
             <strong>系統就緒。</strong><br>
-            請按 <strong>Tab</strong> 鍵瀏覽控制項。<br>
-            支援檔案：JPG, PNG, MP3, WAV, MP4, PDF。
+            請按 <strong>Tab</strong> 鍵瀏覽，或使用 <strong>Alt+I</strong> 直接輸入問題。<br>
+            支援上傳：圖片 (JPG/PNG)、錄音 (MP3/WAV)、文件 (PDF/TXT)。
         </div>
     </main>
 </div>
 
 <!-- 底部控制區 -->
-<footer class="controls-wrapper">
+<footer class="controls-wrapper" role="contentinfo">
     <form id="chat-form" onsubmit="handleFormSubmit(event)">
         
-        <!-- 1. 搜尋開關 (AccessKey: G) -->
-        <div class="search-toggle-container">
-            <input type="checkbox" id="enable-search" accesskey="g">
-            <label for="enable-search" style="margin:0; cursor:pointer; flex:1;">
-                啟用 Google 聯網搜尋
-                <span class="shortcut-hint">(Alt + G)</span>
-            </label>
-        </div>
+        <!-- 工具列 -->
+        <div style="margin-bottom: 10px;">
+             <!-- 搜尋開關 -->
+            <div class="search-toggle">
+                <input type="checkbox" id="enable-search" accesskey="g">
+                <label for="enable-search" style="margin:0; cursor:pointer; flex:1;">
+                    啟用 Google 聯網搜尋 <span style="color:#888; font-size:0.8em;">(Alt + G)</span>
+                </label>
+            </div>
 
-        <!-- 2. 檔案上傳 (AccessKey: U) -->
-        <div>
-            <!-- 
-               accept 屬性設定說明：
-               image/* : 所有圖片 (拍照)
-               audio/* : 所有音訊 (錄音/MP3)
-               video/* : 所有影片 (MP4)
-               application/pdf : PDF 文件
-               text/plain : 純文字檔
-            -->
+            <!-- 檔案上傳 -->
             <input type="file" id="file-input" class="visually-hidden" 
                    accept="image/*,audio/*,video/*,application/pdf,text/plain" 
                    onchange="handleFileSelect()">
             
-            <button type="button" id="upload-trigger-btn" class="upload-btn-style" onclick="document.getElementById('file-input').click()" accesskey="u">
-                📁 選擇檔案 (圖片/錄音/PDF/影片)
-                <span class="shortcut-hint"><br>(快速鍵: Alt + U)</span>
+            <button type="button" id="upload-trigger-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u" style="width:100%; text-align:left;">
+                📁 選擇檔案 (未選擇) <span style="float:right; font-weight:normal; font-size:0.8em;">Alt + U</span>
             </button>
-            
-            <div id="file-status" role="status" style="color:var(--accent-color); margin-top:5px; text-align:center; font-size:0.9em;"></div>
         </div>
         
-        <!-- 3. 文字輸入 (AccessKey: I) -->
-        <div>
-            <label for="user-input" class="sr-only">輸入問題</label>
-            <input type="text" id="user-input" placeholder="輸入文字... (Enter 送出)" autocomplete="off" accesskey="i">
+        <!-- 輸入區 -->
+        <div class="input-row">
+            <div style="flex: 1;">
+                <label for="user-input" class="visually-hidden">輸入您的問題</label>
+                <input type="text" id="user-input" placeholder="輸入訊息... (Enter 送出)" autocomplete="off" accesskey="i">
+            </div>
+            <button type="submit" id="submit-btn" style="flex: 0 0 100px; padding:10px;">
+                傳送
+            </button>
         </div>
-        
-        <!-- 4. 遞交按鈕 -->
-        <button type="submit" id="submit-btn">
-            遞交 / 傳送
-            <span class="shortcut-hint">(Enter)</span>
-        </button>
     </form>
 </footer>
 
+<!-- 聲音產生器 (Audio Context) -->
 <script>
-    // === 預設指令 (包含多模態處理邏輯) ===
+    // === 音效回饋系統 ===
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playTone(freq, type, duration) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function playSuccess() { playTone(880, 'sine', 0.1); setTimeout(() => playTone(1760, 'sine', 0.2), 100); }
+    function playError() { playTone(150, 'sawtooth', 0.3); setTimeout(() => playTone(100, 'sawtooth', 0.4), 200); }
+    function playStart() { playTone(440, 'sine', 0.1); }
+
+    // === 預設長指令 (可編輯) ===
     const DEFAULT_PROMPT = `# 角色設定
-你是一位視障輔助助理，使用繁體中文(香港)。
-# 任務邏輯
-1. **圖片**：描述場景、人物、文字或物體細節。
-2. **音訊**：聆聽內容，進行「語音轉文字」並總結重點。
-3. **PDF/文件**：閱讀文件內容，提取關鍵資訊與摘要。
-4. **影片**：描述影片中發生的事件與動作。
-5. **搜尋**：若有啟用，整合最新資訊並標註來源。
-# 風格
-精簡、條列式，將最重要的結論放在第一句。`;
+你是一位專業的視障輔助 AI 助理。你的目標是成為使用者的「眼睛」與「耳朵」。你使用繁體中文(香港)與使用者溝通。
+
+# 核心原則
+1. **客觀與精準**：優先描述事實，不需過多修飾，除非使用者要求文學性的描述。
+2. **結構化輸出**：視障人士透過螢幕閱讀器聆聽，因此請多使用列點 (Bullet points) 與簡短的段落。
+3. **資訊優先級**：將最重要的結論或警示放在最前面。
+
+# 處理各類輸入的邏輯
+
+## 1. 圖片分析 (Image)
+- **場景概況**：用一句話總結圖片內容 (例如：「這是一張在超市拍攝的照片，前方有貨架。」)。
+- **文字識別 (OCR)**：如果圖片中有文字，請完整讀出，並說明文字的位置與排版。
+- **細節描述**：描述顏色、形狀、人物表情、物體相對位置 (例如：「在左上方有一個紅色按鈕」)。
+- **無障礙警示**：若圖片包含危險物品、障礙物或需要注意的資訊 (如保存期限)，請特別標註「⚠️ 注意」。
+
+## 2. 文件閱讀 (PDF/Text)
+- 先提供 3-5 句的「內容摘要」。
+- 若文件很長，列出章節或關鍵點。
+- 若包含表格，請嘗試用文字清楚敘述表格關係。
+
+## 3. 語音/音訊處理 (Audio)
+- 進行逐字或摘要轉錄。
+- 辨識說話者的情緒或背景聲音 (例如：「背景有吵雜的車聲」)。
+
+## 4. 聯網搜尋 (Search)
+- 若使用者詢問即時資訊 (如天氣、新聞、股價)，請務必結合 Google Search 工具。
+- 回答時請標註資料來源的名稱。
+
+# 回覆格式規範
+- 請勿使用過多的 Emoji，以免干擾語音朗讀，適量即可。
+- 遇到程式碼時，請使用 Markdown 的 Code Block。
+- 語氣保持親切、耐心且專業。`;
 
     // === 初始化 ===
     document.addEventListener('DOMContentLoaded', function() {
         loadSettings();
+        checkApiKeyStatus();
+        
+        // 確保輸入框在載入時獲得焦點
         const key = localStorage.getItem('gemini_api_key');
         if (!key) {
             document.getElementById('settings-area').open = true;
             document.getElementById('api-key').focus();
         } else {
-            document.getElementById('user-input').focus();
+            // 延遲聚焦以免被閱讀器略過
+            setTimeout(() => document.getElementById('user-input').focus(), 500);
         }
     });
 
-    // === 檔案選擇處理 ===
+    // === 設定管理 ===
+    function loadSettings() {
+        const savedKey = localStorage.getItem('gemini_api_key');
+        const savedPrompt = localStorage.getItem('gemini_system_prompt');
+        const savedModel = localStorage.getItem('gemini_model');
+
+        // 載入 Prompt，如果沒有則使用預設
+        const promptArea = document.getElementById('system-prompt');
+        promptArea.value = savedPrompt || DEFAULT_PROMPT;
+        updateCharCount();
+
+        if (savedKey) document.getElementById('api-key').value = savedKey;
+        if (savedModel) addAndSelectModel(savedModel);
+    }
+
+    function saveSettings() {
+        const key = document.getElementById('api-key').value.trim();
+        const prompt = document.getElementById('system-prompt').value;
+        const model = document.getElementById('model-select').value;
+        
+        if(!key) { 
+            playError();
+            alert("⚠️ 請輸入 API Key"); 
+            return; 
+        }
+        
+        localStorage.setItem('gemini_api_key', key);
+        localStorage.setItem('gemini_system_prompt', prompt);
+        localStorage.setItem('gemini_model', model);
+        
+        playSuccess();
+        const status = document.getElementById('save-status');
+        status.textContent = "✅ 設定已儲存！指令長度：" + prompt.length + " 字";
+        status.style.color = "var(--accent-color)";
+        
+        setTimeout(() => status.textContent = "", 4000);
+    }
+
+    function restoreDefaultPrompt() {
+        if(confirm("確定要恢復成系統預設的指令嗎？您目前的編輯將會消失。")) {
+            document.getElementById('system-prompt').value = DEFAULT_PROMPT;
+            updateCharCount();
+            playStart(); // 提示操作發生
+        }
+    }
+
+    function clearPrompt() {
+        if(confirm("確定要清空指令欄位嗎？")) {
+            document.getElementById('system-prompt').value = "";
+            updateCharCount();
+        }
+    }
+
+    function updateCharCount() {
+        const len = document.getElementById('system-prompt').value.length;
+        document.getElementById('char-count-display').textContent = `目前字數: ${len} (建議可達 3000+)`;
+    }
+
+    // === API 檢查與模型 ===
+    async function checkAndSaveKeys() {
+        const key = document.getElementById('api-key').value.trim();
+        const statusDiv = document.getElementById('model-status');
+        
+        if(!key) { alert("請先輸入 Key"); return; }
+        
+        statusDiv.innerHTML = '<span class="loading-spinner"></span> 連線檢查中...';
+        
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+            if(!res.ok) throw new Error("Key 可能無效或網路錯誤");
+            const data = await res.json();
+            
+            const select = document.getElementById('model-select');
+            // 保留使用者當前選擇
+            const currentVal = select.value; 
+            
+            // 簡單過濾並加入清單
+            const validModels = data.models
+                .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+                .filter(m => m.name.includes("gemini"));
+
+            validModels.forEach(m => {
+                const id = m.name.replace("models/", "");
+                if (![...select.options].some(o => o.value === id)) {
+                    let opt = document.createElement("option");
+                    opt.value = id;
+                    opt.text = `${m.displayName} (${id})`;
+                    select.add(opt);
+                }
+            });
+            
+            statusDiv.textContent = "✅ 金鑰有效，模型清單已更新";
+            localStorage.setItem('gemini_api_key', key);
+            playSuccess();
+        } catch(e) {
+            statusDiv.textContent = "❌ 錯誤: " + e.message;
+            playError();
+        }
+    }
+
+    function addAndSelectModel(modelId) {
+        const select = document.getElementById('model-select');
+        if (![...select.options].some(o => o.value === modelId)) {
+            let opt = document.createElement('option');
+            opt.value = modelId;
+            opt.text = modelId + " (紀錄)";
+            select.add(opt);
+        }
+        select.value = modelId;
+    }
+
+    function checkApiKeyStatus() {
+        if(!localStorage.getItem('gemini_api_key')) {
+            document.getElementById('model-status').textContent = "⚠️ 請先設定 API Key";
+        }
+    }
+
+    // === 檔案處理 ===
     function handleFileSelect() {
         const fileInput = document.getElementById('file-input');
-        const statusDiv = document.getElementById('file-status');
         const triggerBtn = document.getElementById('upload-trigger-btn');
         
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
-            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
             
-            // 狀態回報
-            let typeLabel = "檔案";
-            if (file.type.startsWith("image")) typeLabel = "圖片";
-            else if (file.type.startsWith("audio")) typeLabel = "音訊";
-            else if (file.type.startsWith("video")) typeLabel = "影片";
-            else if (file.type === "application/pdf") typeLabel = "PDF文件";
-
-            const msg = `已選擇: ${file.name} (${typeLabel}, ${sizeMB}MB)`;
-            statusDiv.textContent = msg;
-            triggerBtn.innerHTML = `✅ ${msg} <span class='shortcut-hint'>(Alt+U 重選)</span>`;
+            // 簡化檔名顯示，避免螢幕閱讀器讀太長
+            const fileName = file.name.length > 20 ? file.name.substring(0, 15) + "..." : file.name;
+            
+            triggerBtn.innerHTML = `✅ 已選: ${fileName} (${sizeMB}MB)`;
             triggerBtn.style.background = "#004400";
             triggerBtn.style.borderColor = "#00ff00";
+            triggerBtn.setAttribute("aria-label", `已選擇檔案 ${file.name}，大小 ${sizeMB} MB，按 Enter 可重新選擇`);
             
-            // 檢查大小 (Base64 上傳建議 < 20MB)
-            if (file.size > 20 * 1024 * 1024) {
-                alert("⚠️ 注意：檔案超過 20MB，可能會導致上傳失敗。建議使用較小的檔案。");
-            }
-
+            // 提示音
+            playStart();
+            
+            // 焦點回到輸入框，方便直接打字
             document.getElementById('user-input').focus();
         } else {
-            statusDiv.textContent = "";
-            triggerBtn.innerHTML = `📁 選擇檔案 (圖片/錄音/PDF/影片) <span class='shortcut-hint'><br>(快速鍵: Alt + U)</span>`;
-            triggerBtn.style.background = "#222";
-            triggerBtn.style.borderColor = "#fff";
+            triggerBtn.innerHTML = `📁 選擇檔案 (未選擇) <span style="float:right; font-weight:normal; font-size:0.8em;">Alt + U</span>`;
+            triggerBtn.style.background = "#333";
+            triggerBtn.style.borderColor = "#777";
+            triggerBtn.setAttribute("aria-label", "選擇檔案上傳，支援圖片、錄音或文件");
         }
     }
 
-    // === 表單遞交 ===
+    // === 主要邏輯：發送請求 ===
     async function handleFormSubmit(event) {
         event.preventDefault();
 
@@ -358,33 +566,56 @@
         const useSearch = document.getElementById('enable-search').checked;
         
         const apiKey = localStorage.getItem('gemini_api_key');
-        const modelName = localStorage.getItem('gemini_model') || "gemini-1.5-flash"; 
-        const systemPrompt = localStorage.getItem('gemini_system_prompt') || DEFAULT_PROMPT;
+        const modelName = document.getElementById('model-select').value;
+        const systemPrompt = document.getElementById('system-prompt').value; // 每次都讀取最新的設定
 
         const text = userInput.value.trim();
         const file = fileInput.files[0];
 
         if (!apiKey) {
-            alert("請輸入 API Key");
+            alert("請先在設定中輸入 Google API Key");
             document.getElementById('settings-area').open = true;
             document.getElementById('api-key').focus();
             return;
         }
 
         if (!text && !file) {
-            alert("請輸入文字或選擇檔案。");
-            return;
+            playError();
+            return; // 靜默失敗
         }
 
+        // 鎖定 UI
+        playStart(); // 播放開始音效
         submitBtn.disabled = true;
-        submitBtn.textContent = "⏳ 正在上傳並分析...";
-        outputDiv.innerHTML = `<div class="message" role="status">正在處理您的請求 (${modelName})...</div>`;
+        submitBtn.innerHTML = '<span class="loading-spinner"></span>';
+        
+        // 顯示用戶訊息
+        if (text) {
+            const userMsg = document.createElement('div');
+            userMsg.className = 'message user';
+            userMsg.textContent = text;
+            outputDiv.appendChild(userMsg);
+        }
+
+        // 建立系統回應佔位符
+        const responseId = 'msg-' + Date.now();
+        const responseDiv = document.createElement('div');
+        responseDiv.className = 'message';
+        responseDiv.id = responseId;
+        responseDiv.setAttribute('role', 'status'); // 讓螢幕閱讀器知道這裡是狀態更新
+        responseDiv.innerHTML = 'AI 正在思考並分析中...';
+        outputDiv.appendChild(responseDiv);
+        
+        // 捲動到底部
+        window.scrollTo(0, document.body.scrollHeight);
 
         try {
             let contentsParts = [];
             
-            // 根據檔案類型調整提示詞
-            let promptText = systemPrompt + "\n\n用戶指令：\n" + (text || "請分析這個檔案的內容");
+            // 組合 Prompt：System Prompt + User Input
+            let promptText = "";
+            if(systemPrompt) promptText += systemPrompt + "\n\n";
+            promptText += "使用者指令：\n" + (text || "請分析這個檔案的內容，並告訴我你看/聽到了什麼。");
             
             contentsParts.push({ text: promptText });
 
@@ -400,7 +631,10 @@
 
             const requestBody = {
                 contents: [{ parts: contentsParts }],
-                generationConfig: { temperature: 0.5, maxOutputTokens: 2000 }
+                generationConfig: { 
+                    temperature: 0.7, 
+                    maxOutputTokens: 4000 // 允許更長的回應
+                }
             };
 
             if (useSearch) {
@@ -417,47 +651,60 @@
 
             const data = await response.json();
             
+            if (!response.ok) {
+                throw new Error(data.error?.message || "伺服器錯誤");
+            }
+
             const candidate = data.candidates?.[0];
             const resultText = candidate?.content?.parts?.[0]?.text;
             const groundingMeta = candidate?.groundingMetadata;
 
             if (resultText) {
+                playSuccess(); // 成功音效
                 let htmlContent = marked.parse(resultText);
 
+                // 處理搜尋來源引用
                 if (groundingMeta?.groundingChunks) {
                     let sourcesList = "";
-                    groundingMeta.groundingChunks.forEach(chunk => {
+                    groundingMeta.groundingChunks.forEach((chunk, index) => {
                         if (chunk.web?.uri) {
-                            const title = chunk.web.title || "參考連結";
+                            const title = chunk.web.title || `來源 ${index + 1}`;
                             sourcesList += `<li><a href="${chunk.web.uri}" target="_blank">${title}</a></li>`;
                         }
                     });
                     if (sourcesList) {
-                        htmlContent += `<div style="margin-top:20px; padding-top:10px; border-top:1px solid #555;"><h4>📚 參考來源：</h4><ul>${sourcesList}</ul></div>`;
+                        htmlContent += `<div style="margin-top:20px; padding-top:10px; border-top:1px solid #555; font-size:0.9em;"><strong>📚 參考資料：</strong><ul>${sourcesList}</ul></div>`;
                     }
                 }
 
-                outputDiv.innerHTML = `<div class="message markdown-body">${htmlContent}</div>`;
+                responseDiv.classList.add('markdown-body');
+                responseDiv.innerHTML = htmlContent;
                 
+                // 重置輸入
                 userInput.value = "";
                 fileInput.value = ""; 
-                handleFileSelect();
-                outputDiv.focus();
+                handleFileSelect(); // 重置按鈕文字
+                
+                // 無障礙優化：將焦點移到新訊息，讓閱讀器自動讀出
+                responseDiv.setAttribute("tabindex", "-1");
+                responseDiv.focus(); 
+
             } else {
-                let msg = "無法取得回應。";
-                if (data.error) msg = `API 錯誤: ${data.error.message}`;
-                outputDiv.innerHTML = `<div class="message error-msg" role="alert">${msg}</div>`;
+                throw new Error("AI 沒有回應任何內容");
             }
 
         } catch (error) {
-            outputDiv.innerHTML = `<div class="message error-msg" role="alert">連線錯誤: ${error.message}</div>`;
+            playError(); // 錯誤音效
+            responseDiv.className = 'message error';
+            responseDiv.innerHTML = `<strong>處理失敗：</strong> ${error.message}`;
+            responseDiv.setAttribute("tabindex", "-1");
+            responseDiv.focus();
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = "遞交 / 傳送";
+            submitBtn.textContent = "傳送";
         }
     }
 
-    // === 工具函式 ===
     function fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -465,78 +712,6 @@
             reader.onerror = reject;
             reader.readAsDataURL(file);
         });
-    }
-
-    function loadSettings() {
-        const savedKey = localStorage.getItem('gemini_api_key');
-        const savedPrompt = localStorage.getItem('gemini_system_prompt');
-        const savedModel = localStorage.getItem('gemini_model');
-
-        document.getElementById('system-prompt').value = savedPrompt || DEFAULT_PROMPT;
-        if (savedKey) document.getElementById('api-key').value = savedKey;
-        if (savedModel) addAndSelectModel(savedModel);
-    }
-
-    function saveSettings() {
-        const key = document.getElementById('api-key').value.trim();
-        if(!key) { alert("請輸入 Key"); return; }
-        
-        localStorage.setItem('gemini_api_key', key);
-        localStorage.setItem('gemini_system_prompt', document.getElementById('system-prompt').value);
-        localStorage.setItem('gemini_model', document.getElementById('model-select').value);
-        
-        const status = document.getElementById('save-status');
-        status.textContent = "✅ 設定已儲存！";
-        setTimeout(() => status.textContent = "", 3000);
-        document.getElementById('settings-area').open = false;
-        document.getElementById('user-input').focus();
-    }
-
-    function addAndSelectModel(modelId) {
-        const select = document.getElementById('model-select');
-        if (![...select.options].some(o => o.value === modelId)) {
-            let opt = document.createElement('option');
-            opt.value = modelId;
-            opt.text = modelId + " (紀錄)";
-            select.add(opt);
-        }
-        select.value = modelId;
-    }
-
-    async function checkAndSaveKeys() {
-        const key = document.getElementById('api-key').value.trim();
-        const statusDiv = document.getElementById('model-status');
-        if(!key) { alert("請先輸入 Key"); return; }
-
-        statusDiv.textContent = "連線檢查中...";
-        try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-            if(!res.ok) throw new Error("Key 無效");
-            const data = await res.json();
-            
-            const select = document.getElementById('model-select');
-            select.innerHTML = "";
-            let best = "";
-            
-            const valid = data.models
-                .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-                .sort((a,b) => b.name.includes('flash') - a.name.includes('flash'));
-            
-            valid.forEach(m => {
-                const id = m.name.replace("models/", "");
-                let opt = document.createElement("option");
-                opt.value = id;
-                opt.text = m.displayName + ` (${id})`;
-                select.add(opt);
-                if(!best && id.includes("flash")) best = id;
-            });
-            
-            if(best) select.value = best;
-            statusDiv.textContent = "✅ 成功";
-            localStorage.setItem('gemini_api_key', key);
-        } catch(e) {
-            statusDiv.textContent = "❌ 錯誤: " + e.message;
-        }
     }
 </script>
 
