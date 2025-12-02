@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>視障輔助 AI 助理 (專業版)</title>
+    <title>視障輔助 AI 助理 (全能增強版)</title>
     <!-- 引入 Markdown 解析庫 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
@@ -28,11 +28,12 @@
             color: var(--text-color);
             margin: 0;
             padding: 0;
-            font-size: 1.1rem; /* 加大字體 */
+            font-size: 1.1rem;
             line-height: 1.6;
+            overflow-x: hidden; /* 防止水平捲動 */
         }
 
-        /* 略過導航連結 (給鍵盤使用者) */
+        /* 略過導航連結 */
         .skip-link {
             position: absolute;
             top: -40px;
@@ -46,14 +47,13 @@
         }
         .skip-link:focus { top: 0; }
 
-        /* 容器佈局 */
         .container {
             max-width: 900px;
             margin: 0 auto;
-            padding: 10px 10px 250px 10px; /* 底部留白給固定控制區 */
+            padding: 10px 10px 280px 10px; /* 底部留白增加，避免被輸入框遮擋 */
         }
 
-        /* 焦點樣式 (全域強制) */
+        /* 焦點樣式 */
         *:focus-visible {
             outline: var(--focus-ring) !important;
             outline-offset: 2px;
@@ -63,7 +63,6 @@
 
         h1, h2, h3 { color: var(--accent-color); margin-top: 1.5rem; }
         
-        /* 設定區域 */
         details {
             background: #111;
             border: 2px solid var(--border-color);
@@ -78,7 +77,7 @@
             font-size: 1.2rem;
             padding: 15px;
             background: #222;
-            list-style: none; /* 隱藏預設三角形 */
+            list-style: none;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -87,13 +86,7 @@
         summary::after { content: "▼"; font-size: 0.8em; margin-left: 10px; }
         details[open] summary::after { content: "▲"; }
 
-        /* 表單元件 */
-        label {
-            display: block;
-            margin-top: 15px;
-            font-weight: bold;
-            color: #ddd;
-        }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #ddd; }
 
         input[type="text"], input[type="password"], textarea, select {
             width: 100%;
@@ -107,28 +100,16 @@
             box-sizing: border-box;
         }
 
-        /* 特別針對長指令輸入框優化 */
         textarea#system-prompt {
-            font-family: monospace; /* 等寬字體方便編輯代碼或結構化文字 */
-            min-height: 300px;      /* 預設高度加大 */
+            font-family: monospace;
+            min-height: 300px;
             line-height: 1.5;
             white-space: pre-wrap;
         }
 
-        .char-count {
-            text-align: right;
-            font-size: 0.9rem;
-            color: #aaa;
-            margin-top: 5px;
-        }
+        .char-count { text-align: right; font-size: 0.9rem; color: #aaa; margin-top: 5px; }
 
-        /* 按鈕樣式 */
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-            flex-wrap: wrap;
-        }
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
 
         button {
             background-color: var(--button-bg);
@@ -144,15 +125,10 @@
             touch-action: manipulation;
         }
 
-        button.secondary {
-            background-color: #333;
-            color: #fff;
-            border-color: #777;
-        }
-
+        button.secondary { background-color: #333; color: #fff; border-color: #777; }
         button:active { transform: scale(0.98); }
 
-        /* 輸出區域 */
+        /* === 輸出區域與長文優化 === */
         .message {
             background: #111;
             padding: 20px;
@@ -160,18 +136,54 @@
             border-radius: 8px;
             border-left: 5px solid var(--accent-color);
             font-size: 1.15rem;
+            word-wrap: break-word;      /* 強制長單字換行 */
+            overflow-wrap: break-word;  /* 防止長網址撐開版面 */
+            position: relative;
         }
         
         .message.user { border-left-color: #0088ff; background: #0a0a1a; }
         .message.error { border-left-color: #ff0000; background: var(--error-bg); }
 
         /* Markdown 樣式修正 */
-        .markdown-body a { color: var(--link-color); text-decoration: underline; }
-        .markdown-body code { background: #333; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
-        .markdown-body pre { background: #222; padding: 15px; overflow-x: auto; border-radius: 5px; }
+        .markdown-body a { color: var(--link-color); text-decoration: underline; word-break: break-all; }
+        .markdown-body code { background: #333; padding: 2px 5px; border-radius: 3px; font-family: monospace; color: #ff8888; }
+        .markdown-body pre { 
+            background: #222; 
+            padding: 15px; 
+            overflow-x: auto; /* 允許程式碼區塊左右捲動 */
+            border-radius: 5px; 
+            border: 1px solid #444;
+        }
         .markdown-body ul, .markdown-body ol { padding-left: 1.5em; }
+        .markdown-body img { max-width: 100%; height: auto; border-radius: 5px; }
 
-        /* 底部控制區 (固定) */
+        /* === 複製按鈕專用樣式 === */
+        .action-bar {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #444;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .copy-btn {
+            background-color: #222;
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 10px 20px;
+            font-size: 1rem;
+            width: auto; /* 不佔滿整行 */
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .copy-btn:hover, .copy-btn:focus {
+            background-color: #333;
+        }
+
+        /* 底部控制區 */
         .controls-wrapper {
             position: fixed;
             bottom: 0; left: 0; right: 0;
@@ -183,20 +195,14 @@
             box-shadow: 0 -5px 20px rgba(0,0,0,0.8);
         }
 
-        .input-row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
+        .input-row { display: flex; gap: 10px; align-items: center; }
 
-        /* 視覺隱藏 (但螢幕閱讀器可讀) */
         .visually-hidden {
             position: absolute;
             width: 1px; height: 1px; padding: 0; margin: -1px;
             overflow: hidden; clip: rect(0,0,0,0); border: 0;
         }
 
-        /* 搜尋開關樣式 */
         .search-toggle {
             display: flex;
             align-items: center;
@@ -208,7 +214,6 @@
         }
         .search-toggle input { width: 25px; height: 25px; margin-right: 10px; }
 
-        /* 載入動畫 */
         .loading-spinner {
             display: inline-block;
             width: 20px; height: 20px;
@@ -229,8 +234,8 @@
 
 <div class="container">
     <header role="banner">
-        <h1 tabindex="-1">AI 視障輔助助理 (全能版)</h1>
-        <p style="text-align:center; color:#ccc;">支援 3000 字長指令 | 圖片/文件分析 | 聯網搜尋</p>
+        <h1 tabindex="-1">AI 視障輔助助理 (全能增強版)</h1>
+        <p style="text-align:center; color:#ccc;">支援 3000 字長指令 | 長文回應複製 | 聯網搜尋</p>
     </header>
 
     <!-- 設定區域 (AccessKey: S) -->
@@ -292,7 +297,7 @@
         <div class="message">
             <strong>系統就緒。</strong><br>
             請按 <strong>Tab</strong> 鍵瀏覽，或使用 <strong>Alt+I</strong> 直接輸入問題。<br>
-            支援上傳：圖片 (JPG/PNG)、錄音 (MP3/WAV)、文件 (PDF/TXT)。
+            系統支援長篇回應自動排版，並提供一鍵複製功能。
         </div>
     </main>
 </div>
@@ -369,41 +374,38 @@
 # 處理各類輸入的邏輯
 
 ## 1. 圖片分析 (Image)
-- **場景概況**：用一句話總結圖片內容 (例如：「這是一張在超市拍攝的照片，前方有貨架。」)。
+- **場景概況**：用一句話總結圖片內容。
 - **文字識別 (OCR)**：如果圖片中有文字，請完整讀出，並說明文字的位置與排版。
-- **細節描述**：描述顏色、形狀、人物表情、物體相對位置 (例如：「在左上方有一個紅色按鈕」)。
+- **細節描述**：描述顏色、形狀、人物表情、物體相對位置。
 - **無障礙警示**：若圖片包含危險物品、障礙物或需要注意的資訊 (如保存期限)，請特別標註「⚠️ 注意」。
 
 ## 2. 文件閱讀 (PDF/Text)
 - 先提供 3-5 句的「內容摘要」。
 - 若文件很長，列出章節或關鍵點。
-- 若包含表格，請嘗試用文字清楚敘述表格關係。
 
 ## 3. 語音/音訊處理 (Audio)
 - 進行逐字或摘要轉錄。
-- 辨識說話者的情緒或背景聲音 (例如：「背景有吵雜的車聲」)。
+- 辨識說話者的情緒或背景聲音。
 
 ## 4. 聯網搜尋 (Search)
-- 若使用者詢問即時資訊 (如天氣、新聞、股價)，請務必結合 Google Search 工具。
+- 若使用者詢問即時資訊 (如天氣、新聞)，請務必結合 Google Search 工具。
 - 回答時請標註資料來源的名稱。
 
 # 回覆格式規範
-- 請勿使用過多的 Emoji，以免干擾語音朗讀，適量即可。
+- 請勿使用過多的 Emoji。
 - 遇到程式碼時，請使用 Markdown 的 Code Block。
-- 語氣保持親切、耐心且專業。`;
+- 如果回覆內容較長，請適當分段，避免一段文字過長。`;
 
     // === 初始化 ===
     document.addEventListener('DOMContentLoaded', function() {
         loadSettings();
         checkApiKeyStatus();
         
-        // 確保輸入框在載入時獲得焦點
         const key = localStorage.getItem('gemini_api_key');
         if (!key) {
             document.getElementById('settings-area').open = true;
             document.getElementById('api-key').focus();
         } else {
-            // 延遲聚焦以免被閱讀器略過
             setTimeout(() => document.getElementById('user-input').focus(), 500);
         }
     });
@@ -414,7 +416,6 @@
         const savedPrompt = localStorage.getItem('gemini_system_prompt');
         const savedModel = localStorage.getItem('gemini_model');
 
-        // 載入 Prompt，如果沒有則使用預設
         const promptArea = document.getElementById('system-prompt');
         promptArea.value = savedPrompt || DEFAULT_PROMPT;
         updateCharCount();
@@ -428,11 +429,7 @@
         const prompt = document.getElementById('system-prompt').value;
         const model = document.getElementById('model-select').value;
         
-        if(!key) { 
-            playError();
-            alert("⚠️ 請輸入 API Key"); 
-            return; 
-        }
+        if(!key) { playError(); alert("⚠️ 請輸入 API Key"); return; }
         
         localStorage.setItem('gemini_api_key', key);
         localStorage.setItem('gemini_system_prompt', prompt);
@@ -441,16 +438,14 @@
         playSuccess();
         const status = document.getElementById('save-status');
         status.textContent = "✅ 設定已儲存！指令長度：" + prompt.length + " 字";
-        status.style.color = "var(--accent-color)";
-        
         setTimeout(() => status.textContent = "", 4000);
     }
 
     function restoreDefaultPrompt() {
-        if(confirm("確定要恢復成系統預設的指令嗎？您目前的編輯將會消失。")) {
+        if(confirm("確定要恢復成系統預設的指令嗎？")) {
             document.getElementById('system-prompt').value = DEFAULT_PROMPT;
             updateCharCount();
-            playStart(); // 提示操作發生
+            playStart();
         }
     }
 
@@ -481,10 +476,6 @@
             const data = await res.json();
             
             const select = document.getElementById('model-select');
-            // 保留使用者當前選擇
-            const currentVal = select.value; 
-            
-            // 簡單過濾並加入清單
             const validModels = data.models
                 .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
                 .filter(m => m.name.includes("gemini"));
@@ -525,6 +516,27 @@
         }
     }
 
+    // === 複製功能 ===
+    function copyToClipboard(button, elementId) {
+        const textToCopy = document.getElementById(elementId).innerText;
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            playSuccess();
+            const originalText = button.innerHTML;
+            button.innerHTML = "✅ 已複製！";
+            button.setAttribute("aria-label", "內容已複製成功");
+            
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.setAttribute("aria-label", "複製全部內容");
+            }, 3000);
+        }).catch(err => {
+            playError();
+            console.error('複製失敗:', err);
+            alert("複製失敗，請手動複製。");
+        });
+    }
+
     // === 檔案處理 ===
     function handleFileSelect() {
         const fileInput = document.getElementById('file-input');
@@ -533,19 +545,13 @@
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
             const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-            
-            // 簡化檔名顯示，避免螢幕閱讀器讀太長
             const fileName = file.name.length > 20 ? file.name.substring(0, 15) + "..." : file.name;
             
             triggerBtn.innerHTML = `✅ 已選: ${fileName} (${sizeMB}MB)`;
             triggerBtn.style.background = "#004400";
             triggerBtn.style.borderColor = "#00ff00";
             triggerBtn.setAttribute("aria-label", `已選擇檔案 ${file.name}，大小 ${sizeMB} MB，按 Enter 可重新選擇`);
-            
-            // 提示音
             playStart();
-            
-            // 焦點回到輸入框，方便直接打字
             document.getElementById('user-input').focus();
         } else {
             triggerBtn.innerHTML = `📁 選擇檔案 (未選擇) <span style="float:right; font-weight:normal; font-size:0.8em;">Alt + U</span>`;
@@ -567,7 +573,7 @@
         
         const apiKey = localStorage.getItem('gemini_api_key');
         const modelName = document.getElementById('model-select').value;
-        const systemPrompt = document.getElementById('system-prompt').value; // 每次都讀取最新的設定
+        const systemPrompt = document.getElementById('system-prompt').value; 
 
         const text = userInput.value.trim();
         const file = fileInput.files[0];
@@ -579,17 +585,12 @@
             return;
         }
 
-        if (!text && !file) {
-            playError();
-            return; // 靜默失敗
-        }
+        if (!text && !file) { playError(); return; }
 
-        // 鎖定 UI
-        playStart(); // 播放開始音效
+        playStart(); 
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="loading-spinner"></span>';
         
-        // 顯示用戶訊息
         if (text) {
             const userMsg = document.createElement('div');
             userMsg.className = 'message user';
@@ -597,49 +598,38 @@
             outputDiv.appendChild(userMsg);
         }
 
-        // 建立系統回應佔位符
         const responseId = 'msg-' + Date.now();
+        const contentId = 'content-' + Date.now(); // 專門給內容文字的 ID
         const responseDiv = document.createElement('div');
         responseDiv.className = 'message';
         responseDiv.id = responseId;
-        responseDiv.setAttribute('role', 'status'); // 讓螢幕閱讀器知道這裡是狀態更新
+        responseDiv.setAttribute('role', 'status');
         responseDiv.innerHTML = 'AI 正在思考並分析中...';
         outputDiv.appendChild(responseDiv);
         
-        // 捲動到底部
         window.scrollTo(0, document.body.scrollHeight);
 
         try {
             let contentsParts = [];
-            
-            // 組合 Prompt：System Prompt + User Input
             let promptText = "";
             if(systemPrompt) promptText += systemPrompt + "\n\n";
-            promptText += "使用者指令：\n" + (text || "請分析這個檔案的內容，並告訴我你看/聽到了什麼。");
+            promptText += "使用者指令：\n" + (text || "請分析這個檔案的內容。");
             
             contentsParts.push({ text: promptText });
 
             if (file) {
                 const base64Data = await fileToBase64(file);
                 contentsParts.push({
-                    inline_data: {
-                        mime_type: file.type,
-                        data: base64Data
-                    }
+                    inline_data: { mime_type: file.type, data: base64Data }
                 });
             }
 
             const requestBody = {
                 contents: [{ parts: contentsParts }],
-                generationConfig: { 
-                    temperature: 0.7, 
-                    maxOutputTokens: 4000 // 允許更長的回應
-                }
+                generationConfig: { temperature: 0.7, maxOutputTokens: 4000 }
             };
 
-            if (useSearch) {
-                requestBody.tools = [{ googleSearch: {} }];
-            }
+            if (useSearch) { requestBody.tools = [{ googleSearch: {} }]; }
 
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             
@@ -651,19 +641,16 @@
 
             const data = await response.json();
             
-            if (!response.ok) {
-                throw new Error(data.error?.message || "伺服器錯誤");
-            }
+            if (!response.ok) throw new Error(data.error?.message || "伺服器錯誤");
 
             const candidate = data.candidates?.[0];
             const resultText = candidate?.content?.parts?.[0]?.text;
             const groundingMeta = candidate?.groundingMetadata;
 
             if (resultText) {
-                playSuccess(); // 成功音效
+                playSuccess();
                 let htmlContent = marked.parse(resultText);
 
-                // 處理搜尋來源引用
                 if (groundingMeta?.groundingChunks) {
                     let sourcesList = "";
                     groundingMeta.groundingChunks.forEach((chunk, index) => {
@@ -677,15 +664,21 @@
                     }
                 }
 
+                // 組合最終 HTML：內容 + 複製按鈕
                 responseDiv.classList.add('markdown-body');
-                responseDiv.innerHTML = htmlContent;
+                responseDiv.innerHTML = `
+                    <div id="${contentId}">${htmlContent}</div>
+                    <div class="action-bar">
+                        <button type="button" class="copy-btn" onclick="copyToClipboard(this, '${contentId}')" aria-label="複製全部內容">
+                            📋 複製全部內容
+                        </button>
+                    </div>
+                `;
                 
-                // 重置輸入
                 userInput.value = "";
                 fileInput.value = ""; 
-                handleFileSelect(); // 重置按鈕文字
+                handleFileSelect();
                 
-                // 無障礙優化：將焦點移到新訊息，讓閱讀器自動讀出
                 responseDiv.setAttribute("tabindex", "-1");
                 responseDiv.focus(); 
 
@@ -694,7 +687,7 @@
             }
 
         } catch (error) {
-            playError(); // 錯誤音效
+            playError();
             responseDiv.className = 'message error';
             responseDiv.innerHTML = `<strong>處理失敗：</strong> ${error.message}`;
             responseDiv.setAttribute("tabindex", "-1");
