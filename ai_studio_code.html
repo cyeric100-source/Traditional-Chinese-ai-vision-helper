@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>視障輔助 AI 助理 (Gemini)</title>
+    <!-- 引入 Markdown 解析器 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --text-color: #FFFFFF;
+            --accent-color: #FFFF00; /* 黃色高對比 */
+            --input-bg: #333333;
+            --border-color: #555555;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 10px;
+            font-size: 18px; /* 加大字體 */
+            line-height: 1.6;
+        }
+
+        /* 無障礙焦點樣式 */
+        *:focus {
+            outline: 4px solid var(--accent-color);
+            outline-offset: 2px;
+        }
+
+        h1, h2, h3 { color: var(--text-color); }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* 設定區塊 (可摺疊) */
+        details {
+            background: #1a1a1a;
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        
+        summary {
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1.1em;
+            padding: 5px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        input[type="text"], 
+        input[type="password"], 
+        textarea {
+            width: 100%;
+            padding: 12px;
+            margin-top: 5px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            font-size: 16px;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            min-height: 150px;
+            font-family: monospace;
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: #000;
+            border: none;
+            padding: 15px 25px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 15px;
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+
+        /* 聊天顯示區 */
+        #chat-output {
+            margin-top: 20px;
+            min-height: 200px;
+            padding-bottom: 100px;
+        }
+
+        .message {
+            background: #1e1e1e;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border-left: 5px solid var(--accent-color);
+        }
+
+        .loading {
+            text-align: center;
+            font-style: italic;
+            padding: 20px;
+            font-size: 1.2em;
+        }
+
+        /* 底部控制區 */
+        .controls {
+            position: sticky;
+            bottom: 0;
+            background: #000;
+            padding: 15px 0;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* 隱藏原生檔案輸入，用按鈕觸發以美化 */
+        #file-input {
+            margin-bottom: 10px;
+        }
+
+        /* Markdown 樣式調整 */
+        .markdown-body h1 { border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .markdown-body strong { color: var(--accent-color); }
+        .markdown-body ul { padding-left: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1 tabindex="0">AI 視覺助理</h1>
+    </header>
+
+    <!-- 設定區域 -->
+    <details id="settings-area">
+        <summary>設定 (API Key 與 指令)</summary>
+        <div>
+            <label for="api-key">Google Gemini API Key (首次使用請輸入):</label>
+            <input type="password" id="api-key" placeholder="輸入 AIza 開頭的金鑰">
+            
+            <label for="system-prompt">預設系統指令 (System Prompt):</label>
+            <textarea id="system-prompt"></textarea>
+            
+            <button onclick="saveSettings()">儲存設定</button>
+            <p id="save-status" role="status"></p>
+        </div>
+    </details>
+
+    <!-- 輸出區域 -->
+    <main id="chat-output" aria-live="polite">
+        <!-- AI 回應會顯示在這裡 -->
+    </main>
+
+    <!-- 底部操作區 -->
+    <footer class="controls">
+        <!-- 檔案上傳 (支援相機) -->
+        <label for="file-input" class="sr-only">上載圖片或拍照</label>
+        <input type="file" id="file-input" accept="image/*" capture="environment">
+        
+        <!-- 文字輸入 -->
+        <label for="user-input" class="sr-only">輸入問題</label>
+        <input type="text" id="user-input" placeholder="輸入問題，或直接拍照後按遞交..." autocomplete="off">
+        
+        <!-- 遞交按鈕 -->
+        <button id="submit-btn" onclick="handleSubmission()">遞交 (傳送)</button>
+    </footer>
+</div>
+
+<script>
+    // === 預設指令 (依照您的要求) ===
+    const DEFAULT_PROMPT = `# 角色設定 (Persona)
+你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
+
+# 全域規則 (Global Rules)
+無論處理何種任務，你必須嚴格遵守以下三大原則：
+1. **語言規範**：唯一輸出語言為繁體中文（香港慣用詞彙）。翻譯要求：必須消化後翻譯，嚴格禁止顯示原文。
+2. **無障礙格式**：善用 # (標題)、- (清單)。嚴格禁止輸出 [] 或 {} 或裝飾性符號。
+3. **內容風格**：文字必須精簡洗鍊，重點置於最前方。
+
+# 任務執行邏輯
+請判斷輸入類型：
+
+## 任務一：網路搜尋請求
+1. 多語言檢索。
+2. 資訊整合 (規格、評測、優缺點)。
+3. 輸出結構分明的文章。
+
+## 任務二：影像分析
+A. **文字**：全力辨識並直接翻譯為中文。
+B. **動植物**：鑑定物種、背景調查。
+C. **產品包裝**：提取資訊並上網搜尋評測與用法，寫導購文。
+D. **螢幕截圖**：焦點報告 -> 介面掃描 -> 狀態過濾 (只報正面狀態)。
+E. **Logo**：識別品牌並簡介。
+F. **其他**：場景描述 (先整體後細節) 或人物描述。`;
+
+    // === 初始化 ===
+    window.onload = function() {
+        loadSettings();
+        // 檢查是否有 Key，若無則自動展開設定
+        const key = localStorage.getItem('gemini_api_key');
+        if (!key) {
+            document.getElementById('settings-area').open = true;
+            document.getElementById('api-key').focus();
+        } else {
+            // 若有 Key，載入預設指令並準備就緒
+            document.getElementById('user-input').focus();
+        }
+    };
+
+    // === 設定管理 ===
+    function loadSettings() {
+        const savedPrompt = localStorage.getItem('gemini_system_prompt');
+        const savedKey = localStorage.getItem('gemini_api_key');
+        
+        document.getElementById('system-prompt').value = savedPrompt || DEFAULT_PROMPT;
+        if (savedKey) {
+            document.getElementById('api-key').value = savedKey;
+        }
+    }
+
+    function saveSettings() {
+        const key = document.getElementById('api-key').value.trim();
+        const prompt = document.getElementById('system-prompt').value;
+        
+        if (!key) {
+            alert("請輸入 API Key");
+            return;
+        }
+
+        localStorage.setItem('gemini_api_key', key);
+        localStorage.setItem('gemini_system_prompt', prompt);
+        
+        const status = document.getElementById('save-status');
+        status.textContent = "設定已儲存！";
+        setTimeout(() => status.textContent = "", 3000);
+        document.getElementById('settings-area').open = false;
+    }
+
+    // === 主要功能邏輯 ===
+    async function handleSubmission() {
+        const apiKey = localStorage.getItem('gemini_api_key');
+        if (!apiKey) {
+            alert("請先在設定中輸入 Google API Key");
+            document.getElementById('settings-area').open = true;
+            return;
+        }
+
+        const submitBtn = document.getElementById('submit-btn');
+        const userInput = document.getElementById('user-input');
+        const fileInput = document.getElementById('file-input');
+        const outputDiv = document.getElementById('chat-output');
+        const systemPrompt = localStorage.getItem('gemini_system_prompt') || DEFAULT_PROMPT;
+
+        const text = userInput.value.trim();
+        const file = fileInput.files[0];
+
+        if (!text && !file) {
+            alert("請輸入文字或選擇一張圖片");
+            return;
+        }
+
+        // 鎖定介面
+        submitBtn.disabled = true;
+        submitBtn.textContent = "分析中，請稍候...";
+        outputDiv.innerHTML = '<div class="loading">正在分析圖片與文字，請稍候...</div>';
+
+        try {
+            // 準備請求資料
+            let contentsParts = [];
+            
+            // 加入系統指令與使用者文字 (Gemini API 建議將系統指令合併在 Prompt 或使用 systemInstruction)
+            // 這裡為了相容性，我們將系統指令與用戶指令合併發送
+            let fullTextPrompt = systemPrompt + "\n\n用戶問題/指令：\n" + text;
+            
+            contentsParts.push({ text: fullTextPrompt });
+
+            // 處理圖片
+            if (file) {
+                const base64Data = await fileToBase64(file);
+                contentsParts.push({
+                    inline_data: {
+                        mime_type: file.type,
+                        data: base64Data
+                    }
+                });
+            }
+
+            // 呼叫 Gemini API (使用 1.5 Pro)
+            // 這裡使用 fetch 直接呼叫 REST API 以免去後端
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: contentsParts
+                    }],
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 2000
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`API 錯誤: ${response.status} - ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            // 解析回應
+            if (data.candidates && data.candidates[0].content) {
+                const markdownText = data.candidates[0].content.parts[0].text;
+                // 使用 Marked.js 轉換 Markdown 為 HTML
+                const htmlContent = marked.parse(markdownText);
+                
+                outputDiv.innerHTML = `<div class="message markdown-body">${htmlContent}</div>`;
+                
+                // 清空輸入，保留 Key
+                userInput.value = "";
+                fileInput.value = ""; // 清除檔案選擇
+            } else {
+                outputDiv.innerHTML = '<div class="message">無法取得回應，請重試。</div>';
+            }
+
+        } catch (error) {
+            console.error(error);
+            outputDiv.innerHTML = `<div class="message" style="color:red">發生錯誤: ${error.message}</div>`;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "遞交 (傳送)";
+            // 讓焦點回到輸出結果，方便讀屏
+            outputDiv.focus();
+        }
+    }
+
+    // === 輔助函式：圖片轉 Base64 ===
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // 移除 "data:image/jpeg;base64," 前綴
+                const base64String = reader.result.split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+</script>
+
+</body>
+</html>
