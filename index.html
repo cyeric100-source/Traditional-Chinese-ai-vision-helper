@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障輔助助理 (2025 最新模型版)</title>
+    <title>AI 視障輔助助理 (智慧列表版)</title>
     <!-- 指定 Marked.js 版本以確保穩定性 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -61,6 +61,9 @@
         button.action-btn { flex: 0 0 auto; width: auto; font-size: 0.9rem; padding: 10px; }
         button:active { transform: scale(0.98); }
         button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* 隱藏元素用的 class */
+        .hidden { display: none !important; }
 
         .btn-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
         .input-group { display: flex; gap: 10px; align-items: flex-end; }
@@ -125,7 +128,7 @@
                 <option value="perplexity">Perplexity (Sonar/即時搜尋)</option>
             </select>
             <p style="font-size:0.85rem; color:#aaa; margin-top:5px;">
-                ⚠️ 提示：除 Gemini 與 OpenRouter 外，部分官方 API 可能因安全性 (CORS) 限制無法在純網頁直接使用。
+                ⚠️ 提示：除 Gemini 與 OpenRouter 外，其他官方 API 基於安全性 (CORS) 限制，不支援從網頁自動更新模型列表。
             </p>
 
             <hr style="border-color:#333; margin: 20px 0;">
@@ -140,7 +143,8 @@
                     <input type="text" id="model-input" list="model-suggestions" placeholder="請選擇或輸入模型 ID">
                     <datalist id="model-suggestions"></datalist>
                 </div>
-                <button type="button" class="secondary action-btn" onclick="fetchAvailableModels()" title="更新列表">
+                <!-- 這個按鈕會根據 AI 廠商是否支援自動抓取而顯示/隱藏 -->
+                <button type="button" id="refresh-model-btn" class="secondary action-btn" onclick="fetchAvailableModels()" title="更新列表">
                     🔄 更新模型清單
                 </button>
             </div>
@@ -183,102 +187,73 @@
 </footer>
 
 <script>
-    // === 2025.12 最新模型列表 ===
+    // === 2025.12 最新模型列表配置 ===
+    // canFetchModels: 定義該廠商是否支援前端 CORS 抓取清單
     const PROVIDERS = {
         gemini: {
             name: "Google Gemini",
             type: "gemini_native",
-            // Gemini 2.0 Flash Exp 於 2024 年底發布，速度與效能極佳
+            canFetchModels: true, // 支援
             defaultModel: "gemini-2.0-flash-exp",
-            suggestions: [
-                "gemini-2.0-flash-exp", 
-                "gemini-1.5-pro", 
-                "gemini-1.5-flash", 
-                "gemini-1.5-flash-8b",
-                "gemini-exp-1206"
-            ],
-            defaultPrompt: "你是一位視障輔助助理。請詳細識別圖片中的文字(OCR)、描述圖片場景細節、障礙物位置，或總結PDF文件內容。",
+            suggestions: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-exp-1206"],
+            defaultPrompt: "你是一位視障輔助助理。請識別圖片文字(OCR)、描述圖片場景細節，或總結PDF文件。",
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}",
             supportSearch: true
         },
         openrouter: {
             name: "OpenRouter",
             type: "openai_compatible",
+            canFetchModels: true, // 支援
             baseUrl: "https://openrouter.ai/api/v1",
-            // Qwen 2.5 VL 是目前開源界極強的視覺模型
             defaultModel: "qwen/qwen-2.5-vl-72b-instruct:free",
-            suggestions: [
-                "qwen/qwen-2.5-vl-72b-instruct:free", 
-                "google/gemini-2.0-flash-exp:free",
-                "meta-llama/llama-3.2-11b-vision-instruct:free",
-                "anthropic/claude-3.5-sonnet",
-                "openai/gpt-4o"
-            ],
-            defaultPrompt: "你是一位全能 AI 助理。請利用你的視覺能力詳細描述圖片，或回答使用者的問題。",
+            suggestions: ["qwen/qwen-2.5-vl-72b-instruct:free", "google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.2-90b-vision-instruct", "openai/gpt-4o"],
+            defaultPrompt: "你是一位全能 AI 助理。請根據選用模型的強項提供協助。",
             listUrl: "https://openrouter.ai/api/v1/models",
             supportSearch: false
         },
         groq: {
             name: "Groq",
             type: "openai_compatible",
+            canFetchModels: false, // 官方 API 不支援前端 CORS
             baseUrl: "https://api.groq.com/openai/v1",
-            // Llama 3.2 90B Vision 是 Groq 上最強的視覺模型
             defaultModel: "llama-3.2-90b-vision-preview",
-            suggestions: [
-                "llama-3.2-90b-vision-preview", 
-                "llama-3.2-11b-vision-preview",
-                "llama-3.3-70b-versatile", 
-                "mixtral-8x7b-32768"
-            ],
-            defaultPrompt: "你是一位極速 AI 助理。請簡潔、快速地描述圖片內容，重點在於障礙物與文字資訊。",
-            listUrl: "https://api.groq.com/openai/v1/models",
+            suggestions: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+            defaultPrompt: "你是一位極速 AI 助理。請簡潔描述圖片內容，重點在於障礙物與文字。",
+            listUrl: null,
             supportSearch: false
         },
         openai: {
             name: "OpenAI",
             type: "openai_compatible",
+            canFetchModels: false, // 官方 API 不支援前端 CORS
             baseUrl: "https://api.openai.com/v1",
             defaultModel: "gpt-4o",
-            suggestions: [
-                "gpt-4o", 
-                "gpt-4o-mini", 
-                "o1-preview",
-                "o1-mini"
-            ],
-            defaultPrompt: "你是由 GPT-4 驅動的視障助理。請提供最細膩、精確的視覺描述與文字識別。",
-            listUrl: "https://api.openai.com/v1/models",
+            suggestions: ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"],
+            defaultPrompt: "你是由 GPT-4 驅動的視障助理。請提供最細膩的視覺描述。",
+            listUrl: null,
             supportSearch: false
         },
         mistral: {
             name: "Mistral",
             type: "openai_compatible",
+            canFetchModels: false, // 官方 API 不支援前端 CORS
             baseUrl: "https://api.mistral.ai/v1",
-            // Pixtral Large 是 Mistral 最新的旗艦視覺模型
             defaultModel: "pixtral-large-latest",
-            suggestions: [
-                "pixtral-large-latest",
-                "pixtral-12b-2409", 
-                "mistral-large-latest",
-                "mistral-small-latest"
-            ],
-            defaultPrompt: "請精準識別圖片文字與文件結構，並以結構化的方式呈現。",
-            listUrl: "https://api.mistral.ai/v1/models",
+            suggestions: ["pixtral-large-latest", "pixtral-12b-2409", "mistral-large-latest"],
+            defaultPrompt: "請精準識別圖片文字與文件結構。",
+            listUrl: null,
             supportSearch: false
         },
         perplexity: {
             name: "Perplexity",
             type: "openai_compatible",
+            canFetchModels: false, // 官方 API 不支援前端 CORS
             baseUrl: "https://api.perplexity.ai",
-            // Sonar 系列是 Perplexity 最新的模型命名
             defaultModel: "sonar-pro", 
-            suggestions: [
-                "sonar-pro", 
-                "sonar", 
-                "sonar-reasoning", 
-                "sonar-reasoning-pro"
-            ],
+            suggestions: ["sonar-pro", "sonar", "sonar-reasoning", "sonar-reasoning-pro"],
             defaultPrompt: "請提供最新的網路即時搜尋資訊，並標註來源。",
-            listUrl: "SKIP"
+            listUrl: null,
+            supportSearch: false // Perplexity 搜尋是內建功能，不需外部工具開關
         }
     };
 
@@ -306,6 +281,7 @@
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
         
+        // 載入儲存的設定
         const savedKey = localStorage.getItem(`${pKey}_key`) || "";
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         const savedPrompt = localStorage.getItem(`${pKey}_prompt`) || conf.defaultPrompt;
@@ -314,8 +290,22 @@
         document.getElementById('model-input').value = savedModel;
         document.getElementById('system-prompt').value = savedPrompt;
         
+        // 更新輸入框的建議清單
         updateModelDatalist(pKey);
 
+        // --- 核心邏輯：控制「更新模型清單」按鈕顯示/隱藏 ---
+        const refreshBtn = document.getElementById('refresh-model-btn');
+        const statusMsg = document.getElementById('model-status');
+        
+        if (conf.canFetchModels) {
+            refreshBtn.classList.remove('hidden');
+            statusMsg.textContent = ""; // 清空之前的訊息
+        } else {
+            refreshBtn.classList.add('hidden');
+            statusMsg.textContent = `ℹ️ ${conf.name} 不支援從網頁更新列表，請直接輸入模型 ID。`;
+        }
+
+        // --- 控制聯網搜尋選項 ---
         const searchCheck = document.getElementById('enable-search');
         const searchContainer = searchCheck.parentElement;
 
@@ -338,7 +328,7 @@
         datalist.innerHTML = "";
         
         let models = PROVIDERS[pKey].suggestions;
-        // 嘗試讀取快取
+        // 嘗試讀取快取 (僅針對支援 Fetch 的廠商)
         try {
             const cached = localStorage.getItem(`${pKey}_model_cache`);
             if (cached) {
@@ -385,21 +375,15 @@
         document.getElementById('system-prompt').value = PROVIDERS[pKey].defaultPrompt;
     }
 
-    // === 抓取模型清單 (含 CORS 容錯) ===
+    // === 抓取模型清單 (僅限支援的廠商) ===
     async function fetchAvailableModels() {
         const pKey = document.getElementById('provider-select').value;
         const apiKey = document.getElementById('api-key').value.trim();
         const conf = PROVIDERS[pKey];
         const statusMsg = document.getElementById('model-status');
 
+        if (!conf.canFetchModels) return; // 雙重防護
         if (!apiKey && pKey !== 'gemini') { alert("請先輸入 API Key"); return; }
-
-        if (conf.listUrl === "SKIP") {
-            statusMsg.innerHTML = "✅ 已載入建議清單 (此 API 不支援前端抓取)";
-            localStorage.removeItem(`${pKey}_model_cache`);
-            updateModelDatalist(pKey);
-            return;
-        }
 
         statusMsg.innerHTML = '<span class="loading-spinner"></span> 連線中...';
         
@@ -415,19 +399,14 @@
                     .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
                     .map(m => m.name.replace("models/", ""))
                     .sort((a,b) => {
-                        // 優先顯示 flash 模型
                         if(a.includes('flash') && !b.includes('flash')) return -1;
                         return 0;
                     });
-            } else {
-                // OpenAI Compatible 嘗試抓取
+            } else if (pKey === 'openrouter') {
                 const res = await fetch(conf.listUrl, {
                     headers: { 'Authorization': `Bearer ${apiKey}` }
                 });
-                
-                if (!res.ok) {
-                    throw new Error(`連線受阻或失敗 (${res.status})`);
-                }
+                if (!res.ok) throw new Error(`連線失敗 (${res.status})`);
                 const data = await res.json();
                 models = (data.data || []).map(m => m.id).sort();
             }
@@ -442,14 +421,8 @@
 
         } catch (e) {
             console.error(e);
-            localStorage.removeItem(`${pKey}_model_cache`);
-            updateModelDatalist(pKey); 
-            
-            if (pKey === 'openrouter' || pKey === 'gemini') {
-                statusMsg.textContent = `❌ 更新失敗: ${e.message}`;
-            } else {
-                statusMsg.innerHTML = `⚠️ 瀏覽器安全性限制 (CORS) 無法自動抓取，已還原預設最新清單。<br>(建議使用 OpenRouter 或 Gemini)`;
-            }
+            // 失敗時不清除舊快取，避免清單全空
+            statusMsg.textContent = `❌ 更新失敗: ${e.message}`;
         }
     }
 
@@ -494,7 +467,6 @@
                 text = await callOpenAICompatible(conf.baseUrl, apiKey, model, prompt, input.value, base64, mime);
             }
 
-            // 安全呼叫 Marked
             const rawHtml = (typeof marked.parse === 'function') ? marked.parse(text) : marked(text);
             resultDiv.innerHTML = rawHtml;
             resultDiv.classList.add('markdown-body');
@@ -512,7 +484,7 @@
                     您的瀏覽器攔截了對 ${conf.name} 的直接連線。<br><br>
                     <strong>解決方案：</strong><br>
                     1. 請改用 <strong>Google Gemini</strong> 或 <strong>OpenRouter</strong> (推薦)。<br>
-                    2. 官方 API (如 OpenAI/Groq) 基於安全理由，通常不允許純網頁端呼叫。
+                    2. 官方 API (如 OpenAI/Groq) 基於安全理由，不支援純網頁直接連線。
                  `;
             } else {
                 resultDiv.innerText = "錯誤: " + err.message;
@@ -531,19 +503,14 @@
         if (sys) finalPrompt = `${sys}\n\n${user}`;
 
         parts.push({text: finalPrompt});
-        
-        if(b64) {
-            parts.push({inline_data: {mime_type: mime, data: b64}});
-        }
+        if(b64) parts.push({inline_data: {mime_type: mime, data: b64}});
 
         const body = { 
             contents: [{ role: "user", parts: parts }], 
             generationConfig: { temperature: 0.7 } 
         };
         
-        if(useSearch) {
-            body.tools = [{googleSearch: {}}]; 
-        }
+        if(useSearch) body.tools = [{googleSearch: {}}]; 
 
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -579,11 +546,7 @@
         
         msgs.push({role: "user", content: contentPayload});
 
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`
-        };
-        // OpenRouter 特殊需求
+        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` };
         if(url.includes("openrouter")) {
             headers['HTTP-Referer'] = window.location.href;
             headers['X-Title'] = 'Visual Assistant';
@@ -621,12 +584,7 @@
 
     function escapeHtml(text) {
         if (!text) return text;
-        return text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 </script>
 
