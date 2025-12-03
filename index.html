@@ -3,641 +3,483 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障輔助助理 (2025 進階版)</title>
-    <!-- 指定 Marked.js 版本以確保穩定性 -->
+    <title>AI 視障助理</title>
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
     <style>
         :root {
             --bg-color: #000000;
             --text-color: #FFFFFF;
-            --accent-color: #FFFF00;
-            --link-color: #88CCFF;
-            --input-bg: #1A1A1A;
+            --accent-color: #FFFF00;     /* 黃色高亮 */
             --border-color: #555555;
+            --input-bg: #1A1A1A;
             --button-bg: #FFFF00;
             --button-text: #000000;
-            --focus-ring: 4px solid #FFFF00;
-            --error-bg: #440000;
             --section-bg: #111;
         }
 
         body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: system-ui, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0; padding: 0;
-            font-size: 1.1rem; line-height: 1.6;
+            font-size: 1.15rem; line-height: 1.6;
         }
 
         .container {
             max-width: 900px;
             margin: 0 auto;
-            padding: 10px 10px 320px 10px; /* 增加底部 padding 以容納增高的控制列 */
+            padding: 10px 10px 350px 10px; /* 底部留白給控制列 */
         }
 
-        /* 焦點與輸入框 */
+        /* 標題樣式 (方便讀屏導航) */
+        h1, h2, h3 { color: var(--accent-color); margin-top: 20px; outline: none; }
+        h1 { font-size: 1.8rem; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        h2 { font-size: 1.4rem; background: #222; padding: 5px 10px; border-radius: 4px; }
+
+        /* 輸入與互動元件 */
         *:focus-visible {
-            outline: var(--focus-ring) !important;
+            outline: 4px solid var(--accent-color) !important;
             outline-offset: 2px;
-            border-radius: 4px;
         }
 
-        input[type="text"], input[type="password"], textarea, select {
-            width: 100%; padding: 15px; margin-top: 8px;
+        input, select, textarea {
+            width: 100%; padding: 12px; margin-top: 5px;
             background: var(--input-bg); border: 2px solid var(--border-color);
             color: var(--text-color); font-size: 1.1rem;
             border-radius: 6px; box-sizing: border-box;
         }
 
-        /* 按鈕樣式 */
         button {
             background-color: var(--button-bg); color: var(--button-text);
-            border: 2px solid #fff; padding: 15px 20px;
-            font-size: 1rem; font-weight: bold; cursor: pointer;
-            border-radius: 8px; flex: 1; min-width: 100px;
+            border: 2px solid #fff; padding: 12px;
+            font-size: 1.1rem; font-weight: bold; cursor: pointer;
+            border-radius: 8px; margin-top: 5px;
         }
-        button.secondary { background-color: #333; color: #fff; border-color: #777; }
-        button.action-btn { flex: 0 0 auto; width: auto; font-size: 0.9rem; padding: 10px; }
         button:active { transform: scale(0.98); }
-        button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        .hidden { display: none !important; }
-
-        .btn-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
-        .input-group { display: flex; gap: 10px; align-items: stretch; }
-
+        button.secondary { background-color: #333; color: #fff; border-color: #777; }
+        
+        /* 設定區域 */
         details {
-            background: var(--section-bg); border: 2px solid var(--border-color);
-            padding: 15px; margin-bottom: 20px; border-radius: 8px;
+            border: 1px solid var(--border-color); padding: 10px;
+            border-radius: 8px; margin-bottom: 20px;
         }
-        summary {
-            cursor: pointer; font-weight: bold; font-size: 1.2rem;
-            list-style: none; display: flex; justify-content: space-between;
-        }
-
+        summary { cursor: pointer; font-size: 1.2rem; font-weight: bold; list-style: none; }
+        
+        /* 訊息顯示區 */
+        .message-area { min-height: 100px; }
         .message {
-            background: #111; padding: 20px; margin-bottom: 20px;
-            border-radius: 8px; border-left: 5px solid var(--accent-color);
+            background: #111; padding: 15px; margin-bottom: 15px;
+            border-left: 5px solid var(--accent-color);
             overflow-wrap: break-word;
         }
         .message.user { border-left-color: #0088ff; background: #0a0a1a; }
-        .message.error { border-left-color: #ff0000; background: var(--error-bg); }
+        .message.error { border-left-color: #ff0000; background: #300; }
 
-        .markdown-body img { max-width: 100%; height: auto; }
-        .markdown-body pre { background: #222; padding: 10px; overflow-x: auto; border: 1px solid #444; }
-        .markdown-body a { color: var(--link-color); }
-
+        /* 底部固定控制區 */
         .controls-wrapper {
             position: fixed; bottom: 0; left: 0; right: 0;
-            background: rgba(0, 0, 0, 0.95); padding: 15px;
-            border-top: 3px solid var(--accent-color); z-index: 999;
+            background: #000; border-top: 3px solid var(--accent-color);
+            padding: 10px; z-index: 100;
         }
+
+        .row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .flex-1 { flex: 1; }
         
-        /* Checkbox 容器樣式 */
-        .toggle-wrapper {
-            flex: 1; display:flex; align-items:center; 
-            background:#222; padding:0 10px; border-radius:6px;
-            min-height: 40px; white-space: nowrap;
+        /* Checkbox 樣式優化 */
+        .check-btn {
+            display: flex; align-items: center; justify-content: center;
+            background: #222; border: 1px solid #555; color: #fff;
+            padding: 10px; border-radius: 6px; cursor: pointer; flex: 1;
         }
-        
-        .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
-        .loading-spinner {
-            display: inline-block; width: 15px; height: 15px;
-            border: 2px solid rgba(255,255,0,0.3); border-radius: 50%;
-            border-top-color: var(--accent-color); animation: spin 1s infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .check-btn input { width: 20px; height: 20px; margin-right: 8px; margin-top: 0; }
+
+        .hidden { display: none !important; }
+        .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+
+        /* Markdown 樣式 */
+        .markdown-body p { margin-bottom: 10px; }
+        .markdown-body ul { padding-left: 20px; }
+        .markdown-body a { color: var(--link-color); }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <header>
-        <h1 tabindex="-1">AI 視障輔助助理 (2025 進階版)</h1>
-    </header>
+    <h1 tabindex="-1">AI 視障助理</h1>
 
+    <!-- 區域 1: 設定 -->
     <details id="settings-area">
-        <summary accesskey="s" role="button">
-            <span>⚙️ 設定與模型選擇 (Alt + S)</span>
-            <span>▼</span>
+        <summary role="button" accesskey="s">
+            <h2>⚙️ 設定 (Alt+S)</h2>
         </summary>
-        <div style="padding-top: 15px;">
-            
-            <label for="provider-select">1. 選擇 AI 服務商:</label>
-            <select id="provider-select" onchange="handleProviderChange()" style="border-color: var(--accent-color);">
-                <option value="gemini">Google Gemini (推薦: 免費/Gemini 2.0)</option>
-                <option value="openrouter">OpenRouter (推薦: 整合所有模型)</option>
-                <option value="groq">Groq (Llama 3.3/極速)</option>
-                <option value="openai">OpenAI (GPT-4o/需付費)</option>
-                <option value="mistral">Mistral AI (Pixtral/歐洲)</option>
-                <option value="perplexity">Perplexity (Sonar/即時搜尋)</option>
-            </select>
-            <p style="font-size:0.85rem; color:#aaa; margin-top:5px;">
-                ⚠️ 提示：除 Gemini 與 OpenRouter 外，其他官方 API 不支援從網頁自動更新列表。
-            </p>
+        
+        <label for="provider-select">服務商:</label>
+        <select id="provider-select" onchange="handleProviderChange()">
+            <option value="gemini">Google Gemini (推薦)</option>
+            <option value="openrouter">OpenRouter (整合)</option>
+            <option value="groq">Groq (極速)</option>
+            <option value="openai">OpenAI (付費)</option>
+            <option value="mistral">Mistral (歐洲)</option>
+            <option value="perplexity">Perplexity (搜尋)</option>
+        </select>
 
-            <hr style="border-color:#333; margin: 20px 0;">
+        <label for="api-key" style="margin-top:10px; display:block;">API Key:</label>
+        <input type="password" id="api-key" placeholder="輸入金鑰" autocomplete="off">
+        
+        <label for="model-input" style="margin-top:10px; display:block;">模型 ID:</label>
+        <div class="row" style="margin-top:0;">
+            <input type="text" id="model-input" list="model-list" placeholder="選擇或輸入 ID">
+            <datalist id="model-list"></datalist>
+            <!-- 僅在支援的服務商顯示 -->
+            <button type="button" id="refresh-btn" class="secondary" style="width: auto;" onclick="fetchOnlineModels()" title="從網路更新">🔄</button>
+        </div>
 
-            <h3>2. API 金鑰與模型</h3>
-            <label for="api-key">API Key (金鑰):</label>
-            <input type="password" id="api-key" placeholder="輸入 API Key..." autocomplete="off">
-            
-            <label for="model-input" style="margin-top:15px;">AI 模型 (Model ID):</label>
-            <div class="input-group">
-                <div style="flex:1; position:relative;">
-                    <input type="text" id="model-input" list="model-suggestions" placeholder="請選擇或輸入模型 ID">
-                    <datalist id="model-suggestions"></datalist>
-                </div>
-                <button type="button" id="refresh-model-btn" class="secondary action-btn" onclick="fetchAvailableModels()" title="更新列表">
-                    🔄 更新清單
-                </button>
-            </div>
-            <p id="model-status" style="font-size:0.9rem; color:var(--accent-color); min-height:1.5em; margin-top:5px;"></p>
+        <label for="system-prompt" style="margin-top:10px; display:block;">角色設定:</label>
+        <textarea id="system-prompt" rows="3"></textarea>
 
-            <hr style="border-color:#333; margin: 20px 0;">
-
-            <h3>3. 預設指令 (System Prompt)</h3>
-            <textarea id="system-prompt" rows="6" placeholder="輸入此 AI 的角色設定..."></textarea>
-
-            <div class="btn-group">
-                <button type="button" onclick="saveCurrentSettings()">💾 儲存設定</button>
-                <button type="button" onclick="restoreDefaultPrompt()" class="secondary">↩️ 恢復預設指令</button>
-            </div>
+        <div class="row">
+            <button type="button" onclick="saveSettings()">💾 儲存</button>
+            <button type="button" onclick="restoreDefaults()" class="secondary">↩️ 恢復預設</button>
         </div>
     </details>
 
-    <main id="chat-output" role="log" aria-live="polite"></main>
+    <!-- 區域 2: 結果顯示 -->
+    <main>
+        <h2 id="result-heading" tabindex="-1">對話結果</h2>
+        <div id="chat-output" class="message-area" role="log" aria-live="polite"></div>
+        
+        <!-- 複製按鈕：預設隱藏，有結果才顯示 -->
+        <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="width:100%; margin-bottom: 20px;">
+            📋 複製結果 (Alt+C)
+        </button>
+    </main>
 </div>
 
+<!-- 區域 3: 底部控制列 -->
 <footer class="controls-wrapper">
-    <form id="chat-form" onsubmit="handleFormSubmit(event)">
-        <!-- 上排：功能開關與檔案選擇 -->
-        <div style="margin-bottom: 10px; display:flex; gap:10px; flex-wrap: wrap;">
-             
-             <!-- 聯網搜尋開關 -->
-             <div class="toggle-wrapper">
-                <input type="checkbox" id="enable-search" checked style="width:20px; margin:0 10px 0 0;">
-                <label for="enable-search" style="margin:0; cursor:pointer; color:#ccc;">聯網 (Alt+G)</label>
-            </div>
+    <form onsubmit="handleSubmit(event)">
+        <!-- 功能開關與上傳 -->
+        <div class="row">
+            <label class="check-btn">
+                <input type="checkbox" id="enable-search" checked>
+                <span>聯網</span>
+            </label>
             
-            <!-- 新增：暫停即時傳送開關 -->
-            <div class="toggle-wrapper" style="border: 1px solid #444;">
-                <input type="checkbox" id="pause-auto-send" style="width:20px; margin:0 10px 0 0;">
-                <label for="pause-auto-send" style="margin:0; cursor:pointer; color:#ccc;">暫停傳送 (Alt+P)</label>
-            </div>
+            <label class="check-btn">
+                <input type="checkbox" id="pause-send">
+                <span>暫停傳送</span>
+            </label>
+        </div>
 
+        <div class="row">
             <input type="file" id="file-input" class="visually-hidden" accept="image/*,application/pdf,text/plain" onchange="handleFileSelect()">
-            <button type="button" id="upload-trigger-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u" style="flex:100%; min-width: 200px;">
-                📷 拍攝或選擇檔案 (Alt+U)
+            <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u">
+                📷 拍攝/檔案 (Alt+U)
             </button>
         </div>
         
-        <!-- 下排：輸入框與操作按鈕 -->
-        <div class="input-group">
-            <input type="text" id="user-input" placeholder="輸入訊息 (若未輸入將自動描述圖片)..." autocomplete="off" accesskey="i">
-            
-            <!-- 新增：複製按鈕 -->
-            <button type="button" class="secondary" style="flex: 0 0 auto; width: 50px; padding: 0;" onclick="copyLastResponse()" title="複製上一次的結果 (Alt+C)">
-                📋
-            </button>
-            
-            <button type="submit" id="submit-btn" style="flex: 0 0 80px;">傳送</button>
+        <!-- 文字輸入 -->
+        <div class="row">
+            <input type="text" id="user-input" placeholder="輸入訊息..." accesskey="i" autocomplete="off">
+            <button type="submit" id="submit-btn" style="width: 80px;">傳送</button>
         </div>
     </form>
 </footer>
 
 <script>
-    // === 2025.12 最新模型列表 ===
+    // === 1. 模型資料庫 (內建清單) ===
     const PROVIDERS = {
         gemini: {
-            name: "Google Gemini",
-            type: "gemini_native",
-            canFetchModels: true,
+            prompt: "請識別圖片文字(OCR)、描述細節或總結文件。",
             defaultModel: "gemini-2.0-flash-exp",
-            suggestions: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-exp-1206"],
-            defaultPrompt: "你是一位視障輔助助理。請識別圖片文字(OCR)、描述圖片場景細節，或總結PDF文件。",
-            listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}",
-            supportSearch: true
+            canFetch: true,
+            models: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-exp-1206"],
+            listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
-            name: "OpenRouter",
-            type: "openai_compatible",
-            canFetchModels: true,
-            baseUrl: "https://openrouter.ai/api/v1",
+            prompt: "請根據模型強項提供協助。",
             defaultModel: "qwen/qwen-2.5-vl-72b-instruct:free",
-            suggestions: ["qwen/qwen-2.5-vl-72b-instruct:free", "google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.2-90b-vision-instruct", "openai/gpt-4o"],
-            defaultPrompt: "你是一位全能 AI 助理。請根據選用模型的強項提供協助。",
-            listUrl: "https://openrouter.ai/api/v1/models",
-            supportSearch: false
+            canFetch: true,
+            models: ["qwen/qwen-2.5-vl-72b-instruct:free", "google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.2-90b-vision-instruct", "openai/gpt-4o"],
+            listUrl: "https://openrouter.ai/api/v1/models"
         },
         groq: {
-            name: "Groq",
-            type: "openai_compatible",
-            canFetchModels: false,
-            baseUrl: "https://api.groq.com/openai/v1",
+            prompt: "請簡潔描述圖片內容。",
             defaultModel: "llama-3.2-90b-vision-preview",
-            suggestions: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-            defaultPrompt: "你是一位極速 AI 助理。請簡潔描述圖片內容。",
-            listUrl: null,
-            supportSearch: false
+            canFetch: false,
+            models: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
         },
         openai: {
-            name: "OpenAI",
-            type: "openai_compatible",
-            canFetchModels: false,
-            baseUrl: "https://api.openai.com/v1",
+            prompt: "請提供細膩的視覺描述。",
             defaultModel: "gpt-4o",
-            suggestions: ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"],
-            defaultPrompt: "你是由 GPT-4 驅動的視障助理。請提供最細膩的視覺描述。",
-            listUrl: null,
-            supportSearch: false
+            canFetch: false,
+            models: ["gpt-4o", "gpt-4o-mini", "o1-preview"]
         },
         mistral: {
-            name: "Mistral",
-            type: "openai_compatible",
-            canFetchModels: false,
-            baseUrl: "https://api.mistral.ai/v1",
+            prompt: "請識別文字與結構。",
             defaultModel: "pixtral-large-latest",
-            suggestions: ["pixtral-large-latest", "pixtral-12b-2409"],
-            defaultPrompt: "請精準識別圖片文字與文件結構。",
-            listUrl: null,
-            supportSearch: false
+            canFetch: false,
+            models: ["pixtral-large-latest", "pixtral-12b-2409"]
         },
         perplexity: {
-            name: "Perplexity",
-            type: "openai_compatible",
-            canFetchModels: false,
-            baseUrl: "https://api.perplexity.ai",
-            defaultModel: "sonar-pro", 
-            suggestions: ["sonar-pro", "sonar", "sonar-reasoning"],
-            defaultPrompt: "請提供最新的網路即時搜尋資訊。",
-            listUrl: null,
-            supportSearch: false
+            prompt: "請提供最新搜尋資訊。",
+            defaultModel: "sonar-pro",
+            canFetch: false,
+            models: ["sonar-pro", "sonar", "sonar-reasoning"]
         }
     };
 
-    // === 初始化 ===
+    // === 2. 初始化 ===
     document.addEventListener('DOMContentLoaded', () => {
-        checkFirstRun();
-        const savedProvider = localStorage.getItem('active_provider') || 'gemini';
+        // 首次執行自動展開設定
+        const hasRun = localStorage.getItem('app_init');
+        if (!hasRun) {
+            document.getElementById('settings-area').open = true;
+            localStorage.setItem('app_init', 'true');
+        }
+
+        // 載入上次設定
+        const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
         handleProviderChange(false);
-
-        // 加入鍵盤快捷鍵監聽
-        document.addEventListener('keydown', (e) => {
-            // Alt + C : 複製
-            if (e.altKey && (e.key === 'c' || e.key === 'C')) {
-                e.preventDefault();
-                copyLastResponse();
-            }
-            // Alt + P : 切換暫停傳送
-            if (e.altKey && (e.key === 'p' || e.key === 'P')) {
-                e.preventDefault();
-                const checkbox = document.getElementById('pause-auto-send');
-                checkbox.checked = !checkbox.checked;
-                // 播放一個簡單的提示音或震動可能更好，這裡用 Console
-                console.log(`暫停傳送: ${checkbox.checked}`);
-            }
-        });
     });
 
-    function checkFirstRun() {
-        const hasRun = localStorage.getItem('app_has_run_before');
-        const details = document.getElementById('settings-area');
-        if (!hasRun) {
-            details.open = true;
-            localStorage.setItem('app_has_run_before', 'true');
-        } else {
-            details.open = false;
-        }
-    }
-
-    // === 設定與 UI 邏輯 ===
+    // === 3. 設定邏輯 ===
     function handleProviderChange(save = true) {
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
-        
-        const savedKey = localStorage.getItem(`${pKey}_key`) || "";
-        const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
-        const savedPrompt = localStorage.getItem(`${pKey}_prompt`) || conf.defaultPrompt;
-        
-        document.getElementById('api-key').value = savedKey;
-        document.getElementById('model-input').value = savedModel;
-        document.getElementById('system-prompt').value = savedPrompt;
-        
-        updateModelDatalist(pKey);
 
-        const refreshBtn = document.getElementById('refresh-model-btn');
-        const statusMsg = document.getElementById('model-status');
-        
-        if (conf.canFetchModels) {
-            refreshBtn.classList.remove('hidden');
-            statusMsg.textContent = "";
-        } else {
-            refreshBtn.classList.add('hidden');
-            statusMsg.textContent = `ℹ️ ${conf.name} 不支援從網頁更新列表，請直接輸入模型 ID。`;
-        }
+        // 載入該服務商的設定 (若無則用預設值)
+        document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
+        document.getElementById('model-input').value = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
+        document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
 
+        // 重建模型清單 (解決問題 1：直接列出清單)
+        const dataList = document.getElementById('model-list');
+        dataList.innerHTML = "";
+        conf.models.forEach(m => {
+            let opt = document.createElement('option');
+            opt.value = m;
+            dataList.appendChild(opt);
+        });
+
+        // 控制 "聯網搜尋" 與 "更新按鈕" 顯示
         const searchCheck = document.getElementById('enable-search');
-        const searchContainer = searchCheck.parentElement;
-
-        if(conf.supportSearch || pKey === 'perplexity') {
-            searchContainer.style.opacity = '1';
+        if (pKey === 'gemini' || pKey === 'perplexity') {
             searchCheck.disabled = false;
-            if (pKey === 'gemini') searchCheck.checked = true;
+            if(pKey === 'gemini') searchCheck.checked = true;
         } else {
-            searchContainer.style.opacity = '0.3';
             searchCheck.disabled = true;
             searchCheck.checked = false;
         }
 
-        if(save) localStorage.setItem('active_provider', pKey);
+        const refreshBtn = document.getElementById('refresh-btn');
+        refreshBtn.style.display = conf.canFetch ? 'block' : 'none';
+
+        if (save) localStorage.setItem('provider', pKey);
     }
 
-    function updateModelDatalist(pKey) {
-        const datalist = document.getElementById('model-suggestions');
-        datalist.innerHTML = "";
-        
-        let models = PROVIDERS[pKey].suggestions;
-        try {
-            const cached = localStorage.getItem(`${pKey}_model_cache`);
-            if (cached) {
-                const parsed = JSON.parse(cached);
-                if (Array.isArray(parsed) && parsed.length > 0) models = parsed;
-            }
-        } catch(e) {}
-
-        models.forEach(mid => {
-            let opt = document.createElement('option');
-            opt.value = mid;
-            datalist.appendChild(opt);
-        });
-    }
-
-    function saveCurrentSettings() {
+    function saveSettings() {
         const pKey = document.getElementById('provider-select').value;
-        const conf = PROVIDERS[pKey];
+        localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
+        localStorage.setItem(`${pKey}_model`, document.getElementById('model-input').value.trim());
+        localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
+        alert("設定已儲存");
+    }
 
-        const currentKey = document.getElementById('api-key').value.trim();
-        const currentModel = document.getElementById('model-input').value.trim();
-        const currentPrompt = document.getElementById('system-prompt').value;
+    function restoreDefaults() {
+        const pKey = document.getElementById('provider-select').value;
+        document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
+    }
 
-        const savedKey = localStorage.getItem(`${pKey}_key`) || "";
-        const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
-        const savedPrompt = localStorage.getItem(`${pKey}_prompt`) || conf.defaultPrompt;
+    // === 4. 功能邏輯 ===
+    
+    // 複製結果 (解決問題 2)
+    function copyResult() {
+        const msgs = document.querySelectorAll('.message:not(.user):not(.error)');
+        if (msgs.length === 0) return;
+        
+        const text = msgs[msgs.length - 1].innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            alert("已複製");
+        }).catch(() => alert("複製失敗"));
+    }
 
-        const isChanged = (currentKey !== savedKey) || (currentModel !== savedModel) || (currentPrompt !== savedPrompt);
-
-        if (isChanged) {
-            localStorage.setItem(`${pKey}_key`, currentKey);
-            localStorage.setItem(`${pKey}_model`, currentModel);
-            localStorage.setItem(`${pKey}_prompt`, currentPrompt);
-            alert(`✅ ${PROVIDERS[pKey].name} 設定已儲存！`);
-        } else {
-            alert(`ℹ️ 設定未變更。`);
+    // 檔案選擇
+    function handleFileSelect() {
+        const file = document.getElementById('file-input').files[0];
+        if (file) {
+            document.getElementById('upload-btn').innerText = `✅ ${file.name}`;
+            // 若未勾選暫停，則自動傳送
+            if (!document.getElementById('pause-send').checked) {
+                setTimeout(() => document.getElementById('submit-btn').click(), 200);
+            }
         }
     }
 
-    function restoreDefaultPrompt() {
+    // 更新模型清單 (僅限支援的服務商)
+    async function fetchOnlineModels() {
         const pKey = document.getElementById('provider-select').value;
-        document.getElementById('system-prompt').value = PROVIDERS[pKey].defaultPrompt;
-    }
-
-    async function fetchAvailableModels() {
-        const pKey = document.getElementById('provider-select').value;
-        const apiKey = document.getElementById('api-key').value.trim();
+        const key = document.getElementById('api-key').value;
         const conf = PROVIDERS[pKey];
-        const statusMsg = document.getElementById('model-status');
 
-        if (!conf.canFetchModels) return;
-        if (!apiKey && pKey !== 'gemini') { alert("請先輸入 API Key"); return; }
-
-        statusMsg.innerHTML = '<span class="loading-spinner"></span> 連線中...';
+        if (!key && pKey !== 'gemini') { alert("需輸入 API Key"); return; }
+        
+        const btn = document.getElementById('refresh-btn');
+        btn.innerText = "⏳";
         
         try {
-            let models = [];
-            
+            let newModels = [];
             if (pKey === 'gemini') {
-                const url = conf.listUrl.replace('{KEY}', apiKey);
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("Key 無效或網路錯誤");
+                const res = await fetch(conf.listUrl.replace('{KEY}', key));
                 const data = await res.json();
-                models = (data.models || [])
-                    .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
-                    .map(m => m.name.replace("models/", ""))
-                    .sort((a,b) => (a.includes('flash') && !b.includes('flash')) ? -1 : 0);
+                newModels = (data.models || []).map(m => m.name.replace("models/", ""));
             } else if (pKey === 'openrouter') {
-                const res = await fetch(conf.listUrl, {
-                    headers: { 'Authorization': `Bearer ${apiKey}` }
-                });
-                if (!res.ok) throw new Error(`連線失敗 (${res.status})`);
+                const res = await fetch(conf.listUrl); // OpenRouter 其實不需要 Key 也能抓列表
                 const data = await res.json();
-                models = (data.data || []).map(m => m.id).sort();
+                newModels = (data.data || []).map(m => m.id);
             }
 
-            if (models.length > 0) {
-                localStorage.setItem(`${pKey}_model_cache`, JSON.stringify(models));
-                updateModelDatalist(pKey);
-                statusMsg.textContent = `✅ 更新成功！找到 ${models.length} 個模型。`;
-            } else {
-                throw new Error("找不到模型");
+            if (newModels.length > 0) {
+                // 更新 datalist
+                const dataList = document.getElementById('model-list');
+                dataList.innerHTML = ""; // 清空舊的
+                // 合併新舊並去重
+                const allModels = Array.from(new Set([...conf.models, ...newModels]));
+                allModels.forEach(m => {
+                    let opt = document.createElement('option');
+                    opt.value = m;
+                    dataList.appendChild(opt);
+                });
+                alert(`更新成功，找到 ${newModels.length} 個模型`);
             }
         } catch (e) {
-            console.error(e);
-            statusMsg.textContent = `❌ 更新失敗: ${e.message}`;
+            alert("更新失敗: " + e.message);
+        } finally {
+            btn.innerText = "🔄";
         }
     }
 
-    // === 新增功能: 複製結果 ===
-    function copyLastResponse() {
-        // 尋找最後一個 AI 回答 (非 user 訊息，且非 error)
-        const messages = document.querySelectorAll('#chat-output .message:not(.user):not(.error)');
-        if (messages.length === 0) {
-            alert("沒有可複製的內容");
-            return;
-        }
-        const lastMsg = messages[messages.length - 1];
-        const textToCopy = lastMsg.innerText;
-
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            // 視覺回饋
-            const originalBorder = lastMsg.style.borderColor;
-            lastMsg.style.borderColor = '#00FF00'; // 綠色閃爍
-            setTimeout(() => { lastMsg.style.borderColor = originalBorder; }, 300);
-            
-            // 這裡可以用語音朗讀 "已複製"
-            alert("✅ 已複製最新結果"); 
-        }).catch(err => {
-            console.error('複製失敗:', err);
-        });
-    }
-
-    // === 核心邏輯：檔案選擇與自動發送 ===
-    function handleFileSelect() {
-        const f = document.getElementById('file-input').files[0];
-        if(f) {
-            const btn = document.getElementById('upload-trigger-btn');
-            btn.innerText = `✅ 已選: ${f.name}`;
-            
-            // 檢查是否暫停傳送
-            const isPaused = document.getElementById('pause-auto-send').checked;
-            
-            if (!isPaused) {
-                // 如果沒有暫停，則自動觸發提交
-                // 使用 setTimeout 確保 UI 更新後再執行
-                setTimeout(() => {
-                    document.getElementById('submit-btn').click();
-                }, 200);
-            }
-        }
-    }
-
-    // === 聊天發送邏輯 ===
-    async function handleFormSubmit(e) {
+    // === 5. 對話核心 ===
+    async function handleSubmit(e) {
         e.preventDefault();
         const pKey = document.getElementById('provider-select').value;
-        const conf = PROVIDERS[pKey];
-        const apiKey = document.getElementById('api-key').value;
+        const key = document.getElementById('api-key').value;
         const model = document.getElementById('model-input').value;
         const prompt = document.getElementById('system-prompt').value;
-        const input = document.getElementById('user-input');
+        const userInput = document.getElementById('user-input');
         const fileInput = document.getElementById('file-input');
         const output = document.getElementById('chat-output');
         const submitBtn = document.getElementById('submit-btn');
 
-        if(!apiKey) { alert("請輸入 API Key"); return; }
-        // 若無文字也無檔案，則不執行
-        if(!input.value && !fileInput.files[0]) return;
+        if (!key) { alert("請輸入 API Key"); document.getElementById('settings-area').open = true; return; }
+        if (!userInput.value && !fileInput.files[0]) return;
 
         submitBtn.disabled = true;
-        submitBtn.innerText = "⏳";
+        submitBtn.innerText = "處理中...";
+
+        // 顯示使用者訊息
+        const userText = userInput.value || (fileInput.files[0] ? "分析圖片..." : "...");
+        output.innerHTML = `<div class="message user">${safeHtml(userText)}</div>`; // 清除舊結果只留最新? 不，這裡保留歷史比較好，但為了簡單，每次 append
         
-        // 顯示使用者訊息 (若是自動發送且無文字，則顯示預設文字)
-        const userText = input.value || (fileInput.files[0] ? "(傳送圖片進行分析...)" : "...");
-        output.innerHTML += `<div class="message user">${escapeHtml(userText)}</div>`;
+        const responseDiv = document.createElement('div');
+        responseDiv.className = 'message';
+        responseDiv.innerText = "思考中...";
+        output.appendChild(responseDiv);
         
-        const resultDiv = document.createElement('div');
-        resultDiv.className = 'message';
-        resultDiv.innerText = "AI 思考中...";
-        output.appendChild(resultDiv);
+        // 隱藏複製按鈕 (直到完成)
+        document.getElementById('copy-btn').classList.add('hidden');
         window.scrollTo(0, document.body.scrollHeight);
 
         try {
             let base64 = null, mime = null;
-            if(fileInput.files[0]) {
+            if (fileInput.files[0]) {
                 base64 = await toBase64(fileInput.files[0]);
                 mime = fileInput.files[0].type;
             }
 
+            // 呼叫 API
             let text = "";
-            const userInputText = input.value || "請詳細描述這張圖片的內容，包含文字與障礙物。";
+            const textPrompt = userInput.value || "請詳細描述內容";
 
-            if(conf.type === 'gemini_native') {
-                text = await callGemini(apiKey, model, prompt, userInputText, base64, mime);
+            if (pKey === 'gemini') {
+                text = await callGemini(key, model, prompt, textPrompt, base64, mime);
             } else {
-                text = await callOpenAICompatible(conf.baseUrl, apiKey, model, prompt, userInputText, base64, mime);
+                text = await callOpenAICompatible(pKey, key, model, prompt, textPrompt, base64, mime);
             }
 
-            const rawHtml = (typeof marked.parse === 'function') ? marked.parse(text) : marked(text);
-            resultDiv.innerHTML = rawHtml;
-            resultDiv.classList.add('markdown-body');
+            // 渲染結果
+            responseDiv.innerHTML = marked.parse(text);
+            responseDiv.classList.add('markdown-body');
             
-            // 重置輸入與檔案狀態
-            input.value = "";
-            fileInput.value = ""; // 清除檔案輸入，避免下次重複發送
-            document.getElementById('upload-trigger-btn').innerText = "📷 拍攝或選擇檔案 (Alt+U)";
+            // 顯示複製按鈕
+            document.getElementById('copy-btn').classList.remove('hidden');
 
-        } catch(err) {
-            resultDiv.className = 'message error';
-            
-            if (err.message.includes("Failed to fetch") || err.message.includes("CORS")) {
-                 resultDiv.innerHTML = `
-                    <strong>連線失敗 (CORS 錯誤)：</strong><br>
-                    您的瀏覽器攔截了對 ${conf.name} 的直接連線。<br><br>
-                    <strong>解決方案：</strong><br>
-                    1. 請改用 <strong>Google Gemini</strong> 或 <strong>OpenRouter</strong> (推薦)。<br>
-                    2. 官方 API (如 OpenAI/Groq) 基於安全理由，不支援純網頁直接連線。
-                 `;
-            } else {
-                resultDiv.innerText = "錯誤: " + err.message;
-            }
+            // 重置輸入
+            userInput.value = "";
+            fileInput.value = "";
+            document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+
+        } catch (err) {
+            responseDiv.className = 'message error';
+            responseDiv.innerText = "錯誤: " + err.message;
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = "傳送";
             window.scrollTo(0, document.body.scrollHeight);
+            // 讓讀屏軟體聚焦標題，提示有新內容
+            document.getElementById('result-heading').focus();
         }
     }
 
+    // API 實作
     async function callGemini(key, model, sys, user, b64, mime) {
         const useSearch = document.getElementById('enable-search').checked;
-        const parts = [];
-        let finalPrompt = user;
-        if (sys) finalPrompt = `${sys}\n\n${user}`;
+        const parts = [{text: sys + "\n\n" + user}];
+        if (b64) parts.push({inline_data: {mime_type: mime, data: b64}});
 
-        parts.push({text: finalPrompt});
-        if(b64) parts.push({inline_data: {mime_type: mime, data: b64}});
-
-        const body = { 
-            contents: [{ role: "user", parts: parts }], 
-            generationConfig: { temperature: 0.7 } 
-        };
-        
-        if(useSearch) body.tools = [{googleSearch: {}}]; 
+        const body = { contents: [{ parts }], generationConfig: { temperature: 0.7 } };
+        if (useSearch) body.tools = [{googleSearch: {}}];
 
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body)
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
         });
-        
         const data = await res.json();
-        if(!res.ok) throw new Error(data.error?.message || "API Error");
+        if (!res.ok) throw new Error(data.error?.message || "API Error");
         
         let txt = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        if(chunks.length > 0) {
-            txt += "\n\n**參考來源:**\n" + chunks.map((c,i) => c.web ? `${i+1}. [${c.web.title}](${c.web.uri})` : "").join("\n");
-        }
+        if (chunks.length > 0) txt += "\n\n**來源:**\n" + chunks.map((c,i) => c.web ? `${i+1}. [${c.web.title}](${c.web.uri})` : "").join("\n");
         return txt;
     }
 
-    async function callOpenAICompatible(url, key, model, sys, user, b64, mime) {
-        if(mime === 'application/pdf') throw new Error("此模式暫不支援 PDF 上傳，請改用 Gemini。");
+    async function callOpenAICompatible(provider, key, model, sys, user, b64, mime) {
+        let url = PROVIDERS[provider].listUrl; // hacky way to get base url
+        if (provider === 'openrouter') url = "https://openrouter.ai/api/v1";
+        else if (provider === 'groq') url = "https://api.groq.com/openai/v1";
+        else if (provider === 'openai') url = "https://api.openai.com/v1";
+        else if (provider === 'mistral') url = "https://api.mistral.ai/v1";
+        else if (provider === 'perplexity') url = "https://api.perplexity.ai";
 
-        const msgs = [];
-        if(sys) msgs.push({role: "system", content: sys});
+        if (mime === 'application/pdf') throw new Error("此模式不支援 PDF，請用 Gemini。");
+
+        const content = [{type: "text", text: user}];
+        if (b64) content.push({type: "image_url", image_url: {url: `data:${mime};base64,${b64}`}});
         
-        let contentPayload = [];
-        contentPayload.push({type: "text", text: user});
-
-        if(b64) {
-            contentPayload.push({
-                type: "image_url", 
-                image_url: { url: `data:${mime};base64,${b64}` }
-            });
-        }
-        
-        msgs.push({role: "user", content: contentPayload});
-
         const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` };
-        if(url.includes("openrouter")) {
-            headers['HTTP-Referer'] = window.location.href;
-            headers['X-Title'] = 'Visual Assistant';
-        }
+        if (provider === 'openrouter') { headers['HTTP-Referer'] = location.href; headers['X-Title'] = 'Visual Assistant'; }
 
         const res = await fetch(`${url}/chat/completions`, {
-            method: 'POST', headers: headers,
-            body: JSON.stringify({ model, messages: msgs, temperature: 0.7 })
+            method: 'POST', headers,
+            body: JSON.stringify({ model, messages: [{role:"system", content:sys}, {role:"user", content}], temperature: 0.7 })
         });
-        
         const data = await res.json();
-        if(!res.ok) {
-            const errMsg = data.error?.message || JSON.stringify(data);
-            throw new Error(errMsg);
-        }
+        if (!res.ok) throw new Error(data.error?.message || JSON.stringify(data));
         return data.choices[0].message.content;
     }
 
+    // 工具函式
     function toBase64(file) {
         return new Promise((r, j) => {
             const reader = new FileReader();
@@ -646,11 +488,7 @@
             reader.readAsDataURL(file);
         });
     }
-
-    function escapeHtml(text) {
-        if (!text) return text;
-        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
+    function safeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 </script>
 
 </body>
