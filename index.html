@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障輔助助理 (修正與增強版)</title>
+    <title>AI 視障輔助助理 (智慧設定版)</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
     <style>
@@ -102,10 +102,10 @@
 
 <div class="container">
     <header>
-        <h1 tabindex="-1">AI 視障輔助助理 (修正版)</h1>
+        <h1 tabindex="-1">AI 視障輔助助理 (智慧設定版)</h1>
     </header>
 
-    <details id="settings-area" open>
+    <details id="settings-area">
         <summary accesskey="s" role="button">
             <span>⚙️ 設定與模型選擇 (Alt + S)</span>
             <span>▼</span>
@@ -162,7 +162,8 @@
     <form id="chat-form" onsubmit="handleFormSubmit(event)">
         <div style="margin-bottom: 10px; display:flex; gap:10px;">
              <div style="flex:1; display:flex; align-items:center; background:#222; padding:0 10px; border-radius:6px;">
-                <input type="checkbox" id="enable-search" style="width:20px; margin:0 10px 0 0;">
+                <!-- 預設 checked，並透過 JS 邏輯強制啟用 -->
+                <input type="checkbox" id="enable-search" checked style="width:20px; margin:0 10px 0 0;">
                 <label for="enable-search" style="margin:0; cursor:pointer; color:#ccc;">聯網搜尋 (Alt+G)</label>
             </div>
             
@@ -236,19 +237,36 @@
             type: "openai_compatible",
             baseUrl: "https://api.perplexity.ai",
             defaultModel: "sonar-pro", 
-            // 這裡更新為最新的 Sonar 系列
             suggestions: ["sonar-pro", "sonar", "sonar-reasoning", "sonar-reasoning-pro"],
             defaultPrompt: "請提供最新的網路搜尋資訊。",
-            listUrl: "SKIP" // 標記為跳過網絡抓取
+            listUrl: "SKIP"
         }
     };
 
-    // === 初始化 ===
+    // === 初始化與首次執行判斷 ===
     document.addEventListener('DOMContentLoaded', () => {
+        // 1. 處理是否首次執行
+        checkFirstRun();
+
+        // 2. 載入上次設定
         const savedProvider = localStorage.getItem('active_provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
         handleProviderChange(false);
     });
+
+    function checkFirstRun() {
+        const hasRun = localStorage.getItem('app_has_run_before');
+        const details = document.getElementById('settings-area');
+        
+        if (!hasRun) {
+            // 第一次：展開設定
+            details.open = true;
+            localStorage.setItem('app_has_run_before', 'true');
+        } else {
+            // 第二次以後：收合設定
+            details.open = false;
+        }
+    }
 
     // === 切換服務商邏輯 ===
     function handleProviderChange(save = true) {
@@ -265,13 +283,17 @@
         
         updateModelDatalist(pKey);
 
-        // 控制功能
+        // 控制聯網搜尋功能
         const searchCheck = document.getElementById('enable-search');
+        const searchContainer = searchCheck.parentElement;
+
         if(conf.supportSearch || pKey === 'perplexity') {
-            searchCheck.parentElement.style.opacity = '1';
+            searchContainer.style.opacity = '1';
             searchCheck.disabled = false;
+            // 依照要求，預設強制勾選
+            searchCheck.checked = true;
         } else {
-            searchCheck.parentElement.style.opacity = '0.3';
+            searchContainer.style.opacity = '0.3';
             searchCheck.disabled = true;
             searchCheck.checked = false;
         }
@@ -283,7 +305,6 @@
         const datalist = document.getElementById('model-suggestions');
         datalist.innerHTML = "";
         
-        // 優先使用內建建議 (最穩定)，若有網路快取則使用
         const cached = localStorage.getItem(`${pKey}_model_cache`);
         let models = cached ? JSON.parse(cached) : PROVIDERS[pKey].suggestions;
 
@@ -294,6 +315,41 @@
         });
     }
 
+    // === 智慧儲存邏輯 (比較有無變更) ===
+    function saveCurrentSettings() {
+        const pKey = document.getElementById('provider-select').value;
+        const conf = PROVIDERS[pKey];
+
+        // 取得目前輸入框的值
+        const currentKey = document.getElementById('api-key').value.trim();
+        const currentModel = document.getElementById('model-input').value.trim();
+        const currentPrompt = document.getElementById('system-prompt').value;
+
+        // 取得已儲存的值 (如果沒有儲存過，比對預設值)
+        const savedKey = localStorage.getItem(`${pKey}_key`) || "";
+        const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
+        const savedPrompt = localStorage.getItem(`${pKey}_prompt`) || conf.defaultPrompt;
+
+        // 比對
+        const isChanged = (currentKey !== savedKey) || (currentModel !== savedModel) || (currentPrompt !== savedPrompt);
+
+        if (isChanged) {
+            // 有變更 -> 執行儲存
+            localStorage.setItem(`${pKey}_key`, currentKey);
+            localStorage.setItem(`${pKey}_model`, currentModel);
+            localStorage.setItem(`${pKey}_prompt`, currentPrompt);
+            alert(`✅ ${PROVIDERS[pKey].name} 設定已更新並儲存！`);
+        } else {
+            // 無變更 -> 僅通知
+            alert(`ℹ️ 設定未變更，無須更新。`);
+        }
+    }
+
+    function restoreDefaultPrompt() {
+        const pKey = document.getElementById('provider-select').value;
+        document.getElementById('system-prompt').value = PROVIDERS[pKey].defaultPrompt;
+    }
+
     // === 核心功能：更新模型清單 ===
     async function fetchAvailableModels() {
         const pKey = document.getElementById('provider-select').value;
@@ -301,12 +357,10 @@
         const conf = PROVIDERS[pKey];
         const statusMsg = document.getElementById('model-status');
 
-        if (!apiKey && pKey !== 'gemini') { alert("請先輸入 API Key"); return; } // Gemini 獲取列表有時不需key但此處統一要求
+        if (!apiKey && pKey !== 'gemini') { alert("請先輸入 API Key"); return; }
 
-        // 針對 Perplexity 的特殊處理：不聯網，直接載入內建最新版
         if (conf.listUrl === "SKIP") {
             statusMsg.innerHTML = "✅ 已載入 Perplexity 最新內建清單 (官方 API 不支援前端抓取)";
-            // 強制重置為內建建議
             localStorage.removeItem(`${pKey}_model_cache`);
             updateModelDatalist(pKey);
             return;
@@ -352,19 +406,6 @@
             localStorage.removeItem(`${pKey}_model_cache`);
             updateModelDatalist(pKey);
         }
-    }
-
-    function saveCurrentSettings() {
-        const pKey = document.getElementById('provider-select').value;
-        localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
-        localStorage.setItem(`${pKey}_model`, document.getElementById('model-input').value.trim());
-        localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
-        alert(`✅ ${PROVIDERS[pKey].name} 設定已儲存`);
-    }
-
-    function restoreDefaultPrompt() {
-        const pKey = document.getElementById('provider-select').value;
-        document.getElementById('system-prompt').value = PROVIDERS[pKey].defaultPrompt;
     }
 
     // === 聊天邏輯 ===
@@ -416,7 +457,6 @@
         } catch(err) {
             resultDiv.className = 'message error';
             
-            // 針對 CORS 錯誤的友善提示
             if (err.message.includes("Failed to fetch") || err.message.includes("CORS")) {
                  resultDiv.innerHTML = `
                     <strong>連線失敗 (CORS 錯誤)：</strong><br>
@@ -468,7 +508,6 @@
         if(b64) content.push({type: "image_url", image_url: {url: `data:${mime};base64,${b64}`}});
         msgs.push({role: "user", content});
 
-        // 針對 OpenRouter 的特殊 Header
         const headers = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${key}`
@@ -485,7 +524,6 @@
         
         const data = await res.json();
         if(!res.ok) {
-            // 嘗試解析詳細錯誤
             const errMsg = data.error?.message || JSON.stringify(data);
             throw new Error(errMsg);
         }
