@@ -32,11 +32,9 @@
             padding: 10px 10px 350px 10px; /* 底部留白給固定控制列 */
         }
 
-        /* === 標題層級 (方便讀屏導航) === */
-        /* 主標題不設為 H1，避免與區域 H1 混淆，或視需求調整 */
+        /* === 標題層級 === */
         .app-title { font-size: 1.5rem; text-align: center; margin: 10px 0; color: #888; }
         
-        /* 區域標題 H1 */
         h1 { 
             font-size: 1.6rem; 
             color: var(--accent-color); 
@@ -74,7 +72,6 @@
             border-radius: 8px; margin-bottom: 10px; background: #111;
         }
         summary { cursor: pointer; list-style: none; }
-        /* 移除 summary 預設三角形 */
         summary::-webkit-details-marker { display: none; }
         
         /* === 訊息顯示區 === */
@@ -86,6 +83,7 @@
         }
         .message.user { border-left-color: #0088ff; background: #0a0a1a; }
         .message.error { border-left-color: #ff0000; background: #300; }
+        .message.info { border-left-color: #88CCFF; background: #0a1a2a; } /* 說明文件專用樣式 */
 
         /* === 底部固定控制區 === */
         .controls-wrapper {
@@ -96,14 +94,14 @@
 
         .row { display: flex; gap: 10px; margin-bottom: 8px; align-items: stretch; }
         
-        /* Checkbox 樣式優化 */
+        /* Checkbox 樣式 */
         .check-btn {
             display: flex; align-items: center; justify-content: center;
             background: #222; border: 1px solid #555; color: #fff;
             padding: 10px; border-radius: 6px; cursor: pointer; flex: 1;
             font-size: 1rem;
         }
-        .check-btn input { width: 20px; height: 20px; margin-right: 8px; margin-bottom: 0; margin-top: 0;}
+        .check-btn input { width: 20px; height: 20px; margin-right: 8px; margin: 0 8px 0 0;}
 
         /* === 狀態提示 (Toast) === */
         #status-toast {
@@ -120,14 +118,16 @@
         .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
         /* Markdown 樣式微調 */
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { border-bottom: none; margin-top: 1.5em; color: #88CCFF; }
         .markdown-body p { margin-bottom: 10px; }
-        .markdown-body ul { padding-left: 20px; }
-        .markdown-body a { color: #88CCFF; }
+        .markdown-body ul { padding-left: 20px; list-style-type: disc; }
+        .markdown-body li { margin-bottom: 5px; }
+        .markdown-body a { color: #FFFF00; text-decoration: underline; }
     </style>
 </head>
 <body>
 
-<!-- 狀態提示框 (讀屏軟體會讀出) -->
+<!-- 狀態提示框 -->
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
@@ -155,11 +155,8 @@
             
             <label for="model-input">模型 ID:</label>
             <div class="row" style="margin-bottom: 10px;">
-                <!-- list 屬性綁定到 datalist -->
                 <input type="text" id="model-input" list="model-list" placeholder="選擇或輸入 ID" style="margin-bottom:0;">
                 <datalist id="model-list"></datalist>
-                
-                <!-- 僅在支援的服務商顯示更新按鈕 -->
                 <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="更新清單">🔄</button>
             </div>
 
@@ -169,6 +166,7 @@
             <div class="row">
                 <button type="button" onclick="saveSettings()">💾 儲存</button>
                 <button type="button" onclick="restoreDefaults()" class="secondary">↩️ 預設</button>
+                <button type="button" onclick="showHelp()" class="secondary" style="background:#004488; color:white; border-color:#5599ff;">📖 使用說明</button>
             </div>
         </div>
     </details>
@@ -180,7 +178,7 @@
         <!-- 對話內容區 -->
         <div id="chat-output" class="message-area" role="log" aria-live="polite"></div>
         
-        <!-- 複製按鈕：預設隱藏，有結果才顯示 -->
+        <!-- 複製按鈕 -->
         <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="width:100%; margin-bottom: 20px;">
             📋 複製結果 (Alt+C)
         </button>
@@ -219,13 +217,49 @@
 </footer>
 
 <script>
-    // === 1. 模型資料庫 (內建清單) ===
+    // === 說明文件內容 (Markdown) ===
+    const HELP_CONTENT = `
+# AI 智慧助理使用手冊
+
+這是一款基於網頁的 AI 輔助工具，整合了多種人工智慧模型，協助使用者進行圖片辨識、文件分析以及文字問答。
+
+## 快速鍵列表
+
+*   **Alt + S**：展開/收合「設定」區域。
+*   **Alt + U**：觸發「拍攝/檔案」上傳。
+*   **Alt + I**：跳轉至「文字輸入框」。
+*   **Alt + C**：複製最後一次 AI 的回答。
+
+## 開始使用
+
+### 1. 圖片或檔案辨識
+1.  按下 **Alt + U** 或點擊「📷 拍攝/檔案」按鈕。
+2.  選擇圖片（JPG, PNG）或 PDF 文件。
+3.  **自動模式（預設）**：選擇檔案後，系統會自動傳送分析。
+4.  **暫停模式**：若勾選「暫停傳送」，選擇檔案後需手動按下「傳送」按鈕。
+
+### 2. 文字對話
+1.  按下 **Alt + I** 進入輸入框。
+2.  輸入問題後按下 Enter 鍵。
+
+### 3. 如何獲取 API Key
+要使用本工具，您需要向 AI 服務商申請金鑰 (API Key)：
+
+*   **Google Gemini (推薦)**：[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) (免費、速度快)
+*   **OpenRouter**：[https://openrouter.ai/keys](https://openrouter.ai/keys) (整合多模型)
+*   **Groq**：[https://console.groq.com/keys](https://console.groq.com/keys) (極速)
+
+### 常見問題
+*   **PDF 無法上傳？** 目前僅 **Google Gemini** 模式支援直接上傳 PDF。
+*   **更新清單失敗？** 部分官方 API (如 OpenAI) 基於安全限制不支援網頁抓取，請手動輸入模型 ID。
+`;
+
+    // === 1. 模型資料庫 ===
     const PROVIDERS = {
         gemini: {
             prompt: "請識別圖片文字(OCR)、描述細節或總結文件。",
             defaultModel: "gemini-2.0-flash-exp",
             canFetch: true,
-            // 修正：確保清單是正確的字串陣列
             models: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-exp-1206"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
@@ -264,24 +298,18 @@
 
     // === 2. 初始化 ===
     document.addEventListener('DOMContentLoaded', () => {
-        // 邏輯：檢查是否第一次造訪
         const hasVisited = localStorage.getItem('app_visited_before');
         const settingsDetails = document.getElementById('settings-area');
 
         if (!hasVisited) {
-            // 第一次：展開設定
             settingsDetails.open = true;
             localStorage.setItem('app_visited_before', 'true');
         } else {
-            // 之後：收合設定 (HTML預設即為收合，無需動作)
             settingsDetails.open = false;
         }
 
-        // 載入上次選擇的服務商
         const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
-        
-        // 初始化該服務商的設定與模型清單
         handleProviderChange(false);
     });
 
@@ -290,15 +318,12 @@
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
 
-        // 載入數值
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('model-input').value = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
 
-        // 重建模型下拉清單 (Datalist)
         updateDatalist(conf.models);
 
-        // 控制介面元件狀態
         const searchCheck = document.getElementById('enable-search');
         if (pKey === 'gemini' || pKey === 'perplexity') {
             searchCheck.disabled = false;
@@ -308,17 +333,15 @@
             searchCheck.checked = false;
         }
 
-        // 更新按鈕顯示
         const refreshBtn = document.getElementById('refresh-btn');
         refreshBtn.style.display = conf.canFetch ? 'block' : 'none';
 
         if (save) localStorage.setItem('provider', pKey);
     }
 
-    // 獨立函式更新 datalist
     function updateDatalist(models) {
         const dataList = document.getElementById('model-list');
-        dataList.innerHTML = ""; // 清空
+        dataList.innerHTML = "";
         models.forEach(m => {
             let opt = document.createElement('option');
             opt.value = m;
@@ -331,11 +354,7 @@
         localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
         localStorage.setItem(`${pKey}_model`, document.getElementById('model-input').value.trim());
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
-        
-        // 顯示短暫提示
         showStatus("設定已儲存");
-        
-        // 自動收合設定區，讓用戶專注於使用
         document.getElementById('settings-area').open = false;
     }
 
@@ -345,25 +364,41 @@
         showStatus("已恢復預設指令");
     }
 
+    // === 顯示說明文件功能 ===
+    function showHelp() {
+        const output = document.getElementById('chat-output');
+        const settings = document.getElementById('settings-area');
+        
+        // 1. 收合設定
+        settings.open = false;
+
+        // 2. 清空結果區並插入說明
+        output.innerHTML = "";
+        const helpDiv = document.createElement('div');
+        helpDiv.className = 'message info markdown-body';
+        helpDiv.innerHTML = marked.parse(HELP_CONTENT);
+        output.appendChild(helpDiv);
+
+        // 3. 隱藏複製按鈕 (說明文件不需要複製)
+        document.getElementById('copy-btn').classList.add('hidden');
+
+        // 4. 將焦點移至結果標題，讀屏軟體開始朗讀
+        document.getElementById('result-heading').focus();
+    }
+
     // === 4. 介面互動與工具函式 ===
-    
-    // 顯示短暫狀態提示 (Toast)
     function showStatus(text) {
         const toast = document.getElementById('status-toast');
         toast.innerText = text;
         toast.classList.add('show');
-        
-        // 1.5 秒後消失
         setTimeout(() => {
             toast.classList.remove('show');
-            // 清空文字以利讀屏軟體下次識別變化，稍微延遲清除
             setTimeout(() => { toast.innerText = ""; }, 300);
         }, 1500);
     }
 
-    // 複製結果
     function copyResult() {
-        const msgs = document.querySelectorAll('.message:not(.user):not(.error)');
+        const msgs = document.querySelectorAll('.message:not(.user):not(.error):not(.info)');
         if (msgs.length === 0) return;
         
         const text = msgs[msgs.length - 1].innerText;
@@ -372,20 +407,17 @@
         }).catch(() => showStatus("複製失敗"));
     }
 
-    // 檔案選擇
     function handleFileSelect() {
         const file = document.getElementById('file-input').files[0];
         if (file) {
             document.getElementById('upload-btn').innerText = `✅ ${file.name}`;
             showStatus("已選擇檔案");
-            // 若未勾選暫停，則自動傳送
             if (!document.getElementById('pause-send').checked) {
                 setTimeout(() => document.getElementById('submit-btn').click(), 200);
             }
         }
     }
 
-    // 聯網更新模型清單
     async function fetchOnlineModels() {
         const pKey = document.getElementById('provider-select').value;
         const key = document.getElementById('api-key').value;
@@ -409,7 +441,6 @@
             }
 
             if (newModels.length > 0) {
-                // 合併新舊並去重
                 const allModels = Array.from(new Set([...conf.models, ...newModels]));
                 updateDatalist(allModels);
                 showStatus(`更新成功，共 ${allModels.length} 個`);
@@ -444,7 +475,9 @@
         submitBtn.disabled = true;
         submitBtn.innerText = "處理中...";
 
-        // 顯示使用者訊息
+        // 若之前是顯示說明文件，先清空
+        if(output.querySelector('.message.info')) output.innerHTML = "";
+
         const userText = userInput.value || (fileInput.files[0] ? "分析圖片..." : "...");
         output.innerHTML += `<div class="message user">${safeHtml(userText)}</div>`;
         
@@ -472,19 +505,13 @@
                 text = await callOpenAICompatible(pKey, key, model, prompt, textPrompt, base64, mime);
             }
 
-            // 渲染結果
             responseDiv.innerHTML = marked.parse(text);
             responseDiv.classList.add('markdown-body');
-            
-            // 顯示複製按鈕
             document.getElementById('copy-btn').classList.remove('hidden');
 
-            // 重置狀態
             userInput.value = "";
             fileInput.value = "";
             document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
-
-            // 讓讀屏軟體聚焦標題，提示有新內容
             document.getElementById('result-heading').focus();
 
         } catch (err) {
@@ -497,7 +524,7 @@
         }
     }
 
-    // === API 呼叫實作 ===
+    // === API 呼叫 ===
     async function callGemini(key, model, sys, user, b64, mime) {
         const useSearch = document.getElementById('enable-search').checked;
         const parts = [{text: sys + "\n\n" + user}];
