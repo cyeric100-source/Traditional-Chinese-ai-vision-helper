@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障輔助助理 (智慧設定版)</title>
+    <title>AI 視障輔助助理 (2025 最新模型版)</title>
     <!-- 指定 Marked.js 版本以確保穩定性 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -105,7 +105,7 @@
 
 <div class="container">
     <header>
-        <h1 tabindex="-1">AI 視障輔助助理 (智慧設定版)</h1>
+        <h1 tabindex="-1">AI 視障輔助助理 (2025 版)</h1>
     </header>
 
     <details id="settings-area">
@@ -117,16 +117,15 @@
             
             <label for="provider-select">1. 選擇 AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()" style="border-color: var(--accent-color);">
-                <option value="gemini">Google Gemini (推薦: 免費/速度快/PDF強)</option>
-                <option value="openrouter">OpenRouter (推薦: 可連各大模型)</option>
-                <option value="groq">Groq (極速/需後端轉發)</option>
-                <option value="openai">OpenAI (穩定/付費/需後端轉發)</option>
-                <option value="mistral">Mistral AI (歐洲/需後端轉發)</option>
-                <option value="perplexity">Perplexity (⚠️ 僅搜尋/需後端轉發)</option>
+                <option value="gemini">Google Gemini (推薦: 免費/Gemini 2.0)</option>
+                <option value="openrouter">OpenRouter (推薦: 整合所有模型)</option>
+                <option value="groq">Groq (Llama 3.3/極速)</option>
+                <option value="openai">OpenAI (GPT-4o/需付費)</option>
+                <option value="mistral">Mistral AI (Pixtral/歐洲)</option>
+                <option value="perplexity">Perplexity (Sonar/即時搜尋)</option>
             </select>
             <p style="font-size:0.85rem; color:#aaa; margin-top:5px;">
-                ⚠️ 注意：OpenAI、Groq 等官方 API 通常會攔截瀏覽器請求 (CORS)。<br>
-                建議使用 <strong>Google Gemini</strong> 或 <strong>OpenRouter</strong> (中轉服務) 以獲得最佳體驗。
+                ⚠️ 提示：除 Gemini 與 OpenRouter 外，部分官方 API 可能因安全性 (CORS) 限制無法在純網頁直接使用。
             </p>
 
             <hr style="border-color:#333; margin: 20px 0;">
@@ -184,14 +183,21 @@
 </footer>
 
 <script>
-    // === AI 服務商設定 ===
+    // === 2025.12 最新模型列表 ===
     const PROVIDERS = {
         gemini: {
             name: "Google Gemini",
             type: "gemini_native",
+            // Gemini 2.0 Flash Exp 於 2024 年底發布，速度與效能極佳
             defaultModel: "gemini-2.0-flash-exp",
-            suggestions: ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-exp-1206"],
-            defaultPrompt: "你是一位視障輔助助理。請識別圖片文字(OCR)、描述圖片細節、或總結PDF內容。",
+            suggestions: [
+                "gemini-2.0-flash-exp", 
+                "gemini-1.5-pro", 
+                "gemini-1.5-flash", 
+                "gemini-1.5-flash-8b",
+                "gemini-exp-1206"
+            ],
+            defaultPrompt: "你是一位視障輔助助理。請詳細識別圖片中的文字(OCR)、描述圖片場景細節、障礙物位置，或總結PDF文件內容。",
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}",
             supportSearch: true
         },
@@ -199,10 +205,16 @@
             name: "OpenRouter",
             type: "openai_compatible",
             baseUrl: "https://openrouter.ai/api/v1",
-            // OpenRouter 模型通常需要前綴
+            // Qwen 2.5 VL 是目前開源界極強的視覺模型
             defaultModel: "qwen/qwen-2.5-vl-72b-instruct:free",
-            suggestions: ["qwen/qwen-2.5-vl-72b-instruct:free", "google/gemini-2.0-flash-exp:free", "perplexity/sonar-reasoning", "meta-llama/llama-3.2-90b-vision-instruct"],
-            defaultPrompt: "你是一位全能 AI 助理。請根據選用模型的強項提供協助。",
+            suggestions: [
+                "qwen/qwen-2.5-vl-72b-instruct:free", 
+                "google/gemini-2.0-flash-exp:free",
+                "meta-llama/llama-3.2-11b-vision-instruct:free",
+                "anthropic/claude-3.5-sonnet",
+                "openai/gpt-4o"
+            ],
+            defaultPrompt: "你是一位全能 AI 助理。請利用你的視覺能力詳細描述圖片，或回答使用者的問題。",
             listUrl: "https://openrouter.ai/api/v1/models",
             supportSearch: false
         },
@@ -210,9 +222,15 @@
             name: "Groq",
             type: "openai_compatible",
             baseUrl: "https://api.groq.com/openai/v1",
-            defaultModel: "llama-3.2-11b-vision-preview",
-            suggestions: ["llama-3.2-11b-vision-preview", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-            defaultPrompt: "你是一位極速 AI 助理。請簡潔描述圖片內容。",
+            // Llama 3.2 90B Vision 是 Groq 上最強的視覺模型
+            defaultModel: "llama-3.2-90b-vision-preview",
+            suggestions: [
+                "llama-3.2-90b-vision-preview", 
+                "llama-3.2-11b-vision-preview",
+                "llama-3.3-70b-versatile", 
+                "mixtral-8x7b-32768"
+            ],
+            defaultPrompt: "你是一位極速 AI 助理。請簡潔、快速地描述圖片內容，重點在於障礙物與文字資訊。",
             listUrl: "https://api.groq.com/openai/v1/models",
             supportSearch: false
         },
@@ -220,9 +238,14 @@
             name: "OpenAI",
             type: "openai_compatible",
             baseUrl: "https://api.openai.com/v1",
-            defaultModel: "gpt-4o-mini",
-            suggestions: ["gpt-4o-mini", "gpt-4o", "o1-mini"],
-            defaultPrompt: "你是由 GPT-4 驅動的視障助理。請提供細膩的視覺描述。",
+            defaultModel: "gpt-4o",
+            suggestions: [
+                "gpt-4o", 
+                "gpt-4o-mini", 
+                "o1-preview",
+                "o1-mini"
+            ],
+            defaultPrompt: "你是由 GPT-4 驅動的視障助理。請提供最細膩、精確的視覺描述與文字識別。",
             listUrl: "https://api.openai.com/v1/models",
             supportSearch: false
         },
@@ -230,9 +253,15 @@
             name: "Mistral",
             type: "openai_compatible",
             baseUrl: "https://api.mistral.ai/v1",
-            defaultModel: "pixtral-12b-2409",
-            suggestions: ["pixtral-12b-2409", "mistral-large-latest"],
-            defaultPrompt: "請精準識別圖片文字與文件結構。",
+            // Pixtral Large 是 Mistral 最新的旗艦視覺模型
+            defaultModel: "pixtral-large-latest",
+            suggestions: [
+                "pixtral-large-latest",
+                "pixtral-12b-2409", 
+                "mistral-large-latest",
+                "mistral-small-latest"
+            ],
+            defaultPrompt: "請精準識別圖片文字與文件結構，並以結構化的方式呈現。",
             listUrl: "https://api.mistral.ai/v1/models",
             supportSearch: false
         },
@@ -240,9 +269,15 @@
             name: "Perplexity",
             type: "openai_compatible",
             baseUrl: "https://api.perplexity.ai",
+            // Sonar 系列是 Perplexity 最新的模型命名
             defaultModel: "sonar-pro", 
-            suggestions: ["sonar-pro", "sonar", "sonar-reasoning"],
-            defaultPrompt: "請提供最新的網路搜尋資訊。",
+            suggestions: [
+                "sonar-pro", 
+                "sonar", 
+                "sonar-reasoning", 
+                "sonar-reasoning-pro"
+            ],
+            defaultPrompt: "請提供最新的網路即時搜尋資訊，並標註來源。",
             listUrl: "SKIP"
         }
     };
@@ -380,7 +415,7 @@
                     .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
                     .map(m => m.name.replace("models/", ""))
                     .sort((a,b) => {
-                        // 簡單排序優化
+                        // 優先顯示 flash 模型
                         if(a.includes('flash') && !b.includes('flash')) return -1;
                         return 0;
                     });
@@ -391,7 +426,6 @@
                 });
                 
                 if (!res.ok) {
-                    // 若是 CORS (status 0 或 401/403 等)
                     throw new Error(`連線受阻或失敗 (${res.status})`);
                 }
                 const data = await res.json();
@@ -408,15 +442,13 @@
 
         } catch (e) {
             console.error(e);
-            // 針對 CORS 錯誤提供友善訊息，不清除建議清單
             localStorage.removeItem(`${pKey}_model_cache`);
-            updateModelDatalist(pKey); // 還原為預設建議
+            updateModelDatalist(pKey); 
             
             if (pKey === 'openrouter' || pKey === 'gemini') {
                 statusMsg.textContent = `❌ 更新失敗: ${e.message}`;
             } else {
-                // 對於通常會失敗的官方 API
-                statusMsg.innerHTML = `⚠️ 瀏覽器安全性限制無法抓取清單，已還原預設建議。<br>(建議使用 OpenRouter 或 Gemini)`;
+                statusMsg.innerHTML = `⚠️ 瀏覽器安全性限制 (CORS) 無法自動抓取，已還原預設最新清單。<br>(建議使用 OpenRouter 或 Gemini)`;
             }
         }
     }
@@ -440,7 +472,6 @@
         submitBtn.disabled = true;
         submitBtn.innerText = "⏳";
         
-        // 顯示使用者訊息
         if(input.value) output.innerHTML += `<div class="message user">${escapeHtml(input.value)}</div>`;
         
         const resultDiv = document.createElement('div');
@@ -468,7 +499,6 @@
             resultDiv.innerHTML = rawHtml;
             resultDiv.classList.add('markdown-body');
             
-            // 清除輸入
             input.value = "";
             fileInput.value = "";
             document.getElementById('upload-trigger-btn').innerText = "📁 選擇檔案 (Alt+U)";
@@ -497,15 +527,12 @@
     async function callGemini(key, model, sys, user, b64, mime) {
         const useSearch = document.getElementById('enable-search').checked;
         const parts = [];
-        // Gemini API 有時對 System Instruction 的放置有嚴格要求，這裡使用簡單的 prompt 串接
-        // 若模型支援 system_instruction 參數可改用，但混合在 user prompt 容錯率較高
         let finalPrompt = user;
         if (sys) finalPrompt = `${sys}\n\n${user}`;
 
         parts.push({text: finalPrompt});
         
         if(b64) {
-            // Gemini 的 inline_data
             parts.push({inline_data: {mime_type: mime, data: b64}});
         }
 
@@ -514,7 +541,6 @@
             generationConfig: { temperature: 0.7 } 
         };
         
-        // Google Search Tool (v1beta)
         if(useSearch) {
             body.tools = [{googleSearch: {}}]; 
         }
@@ -528,7 +554,6 @@
         if(!res.ok) throw new Error(data.error?.message || "API Error");
         
         let txt = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        // 處理搜尋來源標註
         const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         if(chunks.length > 0) {
             txt += "\n\n**參考來源:**\n" + chunks.map((c,i) => c.web ? `${i+1}. [${c.web.title}](${c.web.uri})` : "").join("\n");
@@ -594,7 +619,6 @@
         }
     }
 
-    // 簡單的 HTML 跳脫防止 XSS (顯示 User Input 時)
     function escapeHtml(text) {
         if (!text) return text;
         return text
