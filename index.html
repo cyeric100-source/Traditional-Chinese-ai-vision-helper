@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (2025 連線修正版)</title>
+    <title>AI 視障助理 (2025 聯網修正終極版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -110,7 +110,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (2025 連線修正版)</h1>
+    <h1 class="app-title">AI 視障助理 (2025 聯網修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -122,13 +122,13 @@
             <label for="provider-select">AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (推薦)</option>
-                <option value="openrouter">OpenRouter (多模型/自動排序)</option>
+                <option value="openrouter">OpenRouter (多模型+聯網)</option>
                 <option value="openai">OpenAI (GPT)</option>
                 <option value="groq">Groq (Llama)</option>
-                <option value="perplexity">Perplexity (搜尋)</option>
+                <option value="perplexity">Perplexity (搜尋專用)</option>
             </select>
 
-            <label for="api-key">API Key (OpenRouter/Gemini/Groq 必填):</label>
+            <label for="api-key">API Key:</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
             <label for="model-select">模型選擇 (日期由新到舊):</label>
@@ -195,21 +195,22 @@
 請適當利用 Markdown 標題層級輸出結果.
 遇到圖片、影片或音訊，請進行巨細無遺、客觀、準確的描述.
 若包含文字就作 OCR 然後全部顯示出來。
-若要上網搜尋就務必搜尋 2025 年的最新資料。`;
+若要上網搜尋就務必搜尋 2025 年 12 月的最新資料。`;
 
+    // 預設清單
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "gemini-exp-1204", 
             canFetch: true,
-            models: ["gemini-exp-1204", "gemini-2.0-flash-exp", "gemini-1.5-flash"],
+            models: ["gemini-exp-1204", "gemini-1.5-pro", "gemini-1.5-flash"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "deepseek/deepseek-chat",
+            defaultModel: "openai/gpt-4o",
             canFetch: true,
-            models: ["deepseek/deepseek-chat", "perplexity/sonar-large-online", "google/gemini-2.0-flash-exp:free", "openai/gpt-4o"],
+            models: ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-pro-1.5"],
             listUrl: "https://openrouter.ai/api/v1/models"
         },
         openai: {
@@ -238,9 +239,9 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const settingsDetails = document.getElementById('settings-area');
-        if (!localStorage.getItem('visited_2025_fixed')) {
+        if (!localStorage.getItem('visited_2025_fixed_final')) {
             settingsDetails.open = true;
-            localStorage.setItem('visited_2025_fixed', 'true');
+            localStorage.setItem('visited_2025_fixed_final', 'true');
         }
         const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
@@ -250,36 +251,32 @@
     function showStatus(msg, type = 'success') {
         const toast = document.getElementById('status-toast');
         toast.innerText = msg;
-        toast.style.backgroundColor = type === 'error' ? 'rgba(255, 0, 0, 0.95)' : 'rgba(255, 255, 0, 0.95)';
-        toast.style.color = type === 'error' ? '#fff' : '#000';
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        toast.className = 'show';
+        if (type === 'error') toast.style.backgroundColor = '#ff4444';
+        else toast.style.backgroundColor = 'rgba(255, 255, 0, 0.95)';
+        
+        setTimeout(() => toast.className = '', 3000);
     }
 
-    function addMessage(role, text) {
-        const chatOutput = document.getElementById('chat-output');
+    function addMessage(role, content) {
         const div = document.createElement('div');
         div.className = `message ${role}`;
         
-        if (role === 'assistant') {
-            try {
-                div.innerHTML = marked.parse(text);
-            } catch (e) {
-                div.innerText = text;
-            }
-            // 讓螢幕報讀軟體能讀到新訊息
-            div.setAttribute('tabindex', '0');
+        if (role === 'assistant' || role === 'info') {
+            div.innerHTML = marked.parse(content);
+            document.getElementById('copy-btn').classList.remove('hidden');
+            // 讓讀屏軟體也能讀取新訊息
+            div.setAttribute('role', 'status'); 
         } else {
-            div.innerText = text;
+            div.innerText = content;
         }
         
-        chatOutput.appendChild(div);
-        document.getElementById('copy-btn').classList.remove('hidden');
+        const output = document.getElementById('chat-output');
+        output.appendChild(div);
         
-        if(role === 'assistant') {
-            div.focus();
-            window.scrollTo(0, document.body.scrollHeight);
-        }
+        // 自動捲動並聚焦標題
+        document.getElementById('result-heading').focus(); 
+        window.scrollTo(0, document.body.scrollHeight);
     }
 
     function handleProviderChange(save = true) {
@@ -295,11 +292,11 @@
         updateModelSelect(conf.models, savedModel);
         
         const searchCheck = document.getElementById('enable-search');
-        // ★修正：OpenRouter 現在也允許勾選搜尋 (因為可能選到線上模型)
-        searchCheck.disabled = (pKey !== 'gemini' && pKey !== 'perplexity' && pKey !== 'openrouter');
+        // 修正：OpenRouter 也可以使用聯網搜尋
+        const allowSearch = ['gemini', 'perplexity', 'openrouter'].includes(pKey);
+        searchCheck.disabled = !allowSearch;
         
-        // Perplexity 強制開啟
-        if (!searchCheck.disabled && pKey === 'perplexity') searchCheck.checked = true;
+        if (pKey === 'perplexity') searchCheck.checked = true;
 
         document.getElementById('refresh-btn').style.display = conf.canFetch ? 'block' : 'none';
         if (save) localStorage.setItem('provider', pKey);
@@ -362,9 +359,8 @@
                 const data = await res.json();
                 
                 if (data.data && Array.isArray(data.data)) {
-                    // 排序：依照建立時間由新到舊
                     newModels = data.data
-                        .sort((a, b) => (b.created || 0) - (a.created || 0))
+                        .sort((a, b) => (b.created || 0) - (a.created || 0)) // 日期排序
                         .map(m => m.id);
                 }
             } 
@@ -386,7 +382,6 @@
                     newModels = data.models
                         .map(m => m.name.replace("models/", ""))
                         .filter(m => m.includes("gemini") && !m.includes("1.0"));
-                    
                     const topModels = conf.models;
                     newModels = Array.from(new Set([...topModels, ...newModels]));
                 }
@@ -394,8 +389,8 @@
 
             if (newModels.length > 0) {
                 updateModelSelect(newModels, newModels[0]); 
-                currentActiveModelId = newModels[0];
-                showStatus(`更新成功：共 ${newModels.length} 個模型 (已按日期排序)`);
+                currentActiveModelId = newModels[0]; 
+                showStatus(`更新成功：共 ${newModels.length} 個模型`);
             } else {
                 showStatus("未找到可用模型", "error");
             }
@@ -447,15 +442,23 @@
 
     function showHelp() {
         const helpText = `
-# 快速說明
-1. **API 設定**：首次使用請到「設定」貼上您的 API Key (Gemini/OpenRouter)。
-2. **模型更新**：點擊「更新」按鈕可抓取最新模型 (如 Gemini Exp 或 Sonar Online)。
-3. **聯網搜尋**：
-   - Gemini: 勾選即可。
-   - OpenRouter: 請選擇支援搜尋的模型 (如 perplexity/sonar-large-online) 並確保「聯網搜尋」已勾選。
-4. **檔案上傳**：支援圖片與文字檔，系統會自動處理。
+### 快速鍵
+- Alt+S: 設定
+- Alt+U: 上傳檔案
+- Alt+I: 輸入框
+- Alt+C: 複製結果
+
+### 關於聯網
+- OpenRouter: 勾選「聯網搜尋」後，程式會自動在模型後加上 :online 以啟用搜尋。
+- Gemini: 勾選後使用 Google Search Grounding。
 `;
-        addMessage('info', helpText);
+        alert(helpText);
+    }
+
+    function copyResult() {
+        const output = document.getElementById('chat-output');
+        const text = output.innerText;
+        navigator.clipboard.writeText(text).then(() => showStatus("已複製全部內容"));
     }
 
     function handleFileSelect() {
@@ -468,12 +471,6 @@
                 setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
             }
         }
-    }
-
-    function copyResult() {
-        const output = document.getElementById('chat-output');
-        const text = output.innerText;
-        navigator.clipboard.writeText(text).then(() => showStatus("已複製全部內容"));
     }
 
     async function handleSubmit(e) {
@@ -489,7 +486,7 @@
         submitBtn.disabled = true; submitBtn.innerText = "發送中";
 
         let displayMsg = userInput;
-        if (selectedFile) displayMsg = `[檔案: ${selectedFile.name} (${selectedFile.type})] ${displayMsg}`;
+        if (selectedFile) displayMsg = `[檔案: ${selectedFile.name}] ${displayMsg}`;
         addMessage('user', displayMsg);
 
         try {
@@ -507,7 +504,6 @@
             document.getElementById('file-input').value = "";
 
         } catch (err) {
-            console.error(err);
             addMessage('error', `API 錯誤: ${err.message}`);
         } finally {
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
@@ -526,8 +522,10 @@
     async function callAI(provider, text, fileBase64, mimeType) {
         const apiKey = document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
-        const model = currentActiveModelId;
         const searchEnabled = document.getElementById('enable-search').checked;
+        
+        // 確保使用當下最新的 model ID
+        let model = currentActiveModelId;
 
         if (!apiKey) throw new Error("請先輸入 API Key");
 
@@ -538,12 +536,34 @@
             'Authorization': `Bearer ${apiKey}` 
         };
 
+        // 修正 1: OpenRouter 聯網邏輯
+        if (provider === 'openrouter') {
+            url = "https://openrouter.ai/api/v1/chat/completions";
+            // 如果勾選聯網，且模型名稱尚未包含 :online，則自動加上
+            if (searchEnabled && !model.endsWith(':online')) {
+                model = model + ':online';
+                showStatus(`已啟用聯網模式 (${model})`, 'info');
+            }
+            // 修正 OpenRouter header
+            headers['HTTP-Referer'] = window.location.href; 
+            headers['X-Title'] = 'AI Assistant';
+        }
+        else if (provider === 'openai') {
+            url = "https://api.openai.com/v1/chat/completions";
+        }
+        else if (provider === 'groq') {
+            url = "https://api.groq.com/openai/v1/chat/completions";
+        }
+        else if (provider === 'perplexity') {
+            url = "https://api.perplexity.ai/chat/completions";
+        }
+
         const finalPrompt = prompt + "\n使用者輸入: " + text;
 
+        // Gemini 專用邏輯
         if (provider === 'gemini') {
-            // Google Gemini Logic
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            delete headers['Authorization'];
+            delete headers['Authorization']; // Gemini 用 URL param
             
             let parts = [{ text: finalPrompt }];
             if (fileBase64) {
@@ -551,62 +571,38 @@
                     inline_data: { mime_type: mimeType, data: fileBase64 }
                 });
             }
-            
             body = {
                 contents: [{ parts: parts }],
                 tools: searchEnabled ? [{ google_search: {} }] : []
             };
-
-        } else {
-            // OpenAI / OpenRouter / Groq Logic
-            if (provider === 'openrouter') {
-                url = "https://openrouter.ai/api/v1/chat/completions";
-                // OpenRouter 建議加入這些 Header 以便支援免費模型與統計
-                headers['HTTP-Referer'] = window.location.href;
-                headers['X-Title'] = "AI Assistant Visually Impaired";
-            }
-            else if (provider === 'groq') {
-                url = "https://api.groq.com/openai/v1/chat/completions";
-            }
-            else if (provider === 'openai') {
-                url = "https://api.openai.com/v1/chat/completions";
-            }
-            else if (provider === 'perplexity') {
-                url = "https://api.perplexity.ai/chat/completions";
-            }
-
-            // 構建 OpenAI 格式的 Messages
-            let messages = [
-                { role: "system", content: prompt }
-            ];
-
-            let userContent = [];
+        } 
+        // 其他廠商 (OpenAI 格式: OpenRouter, Groq, Perplexity, OpenAI)
+        else {
+            let messages = [];
             
-            // 處理圖片 (OpenAI Vision 格式)
+            // 修正 2: 處理圖片上傳 (Vision)
             if (fileBase64) {
-                userContent.push({ type: "text", text: text });
-                userContent.push({
-                    type: "image_url",
-                    image_url: {
-                        url: `data:${mimeType};base64,${fileBase64}`
-                    }
+                messages.push({
+                    role: "user",
+                    content: [
+                        { type: "text", text: finalPrompt },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${mimeType};base64,${fileBase64}`
+                            }
+                        }
+                    ]
                 });
             } else {
-                userContent = text; // 純文字
+                messages.push({ role: "user", content: finalPrompt });
             }
-
-            messages.push({ role: "user", content: userContent });
 
             body = {
                 model: model,
-                messages: messages,
-                temperature: 0.7
+                messages: messages
+                // 注意：Perplexity 不支援 image_url，若上傳會報錯，這是 API 限制
             };
-            
-            // 注意：一般 OpenAI 介面不支援直接透過參數開啟搜尋，
-            // 但如果選用了 Perplexity/Sonar 模型，它們會自動搜尋。
-            // 如果選用了 OpenRouter 上的 Google 模型，且希望強制傳入 tools，可在此擴充，
-            // 但目前最穩定的方式是依賴模型本身的能力 (如 Sonar)。
         }
 
         const res = await fetch(url, {
@@ -615,28 +611,24 @@
             body: JSON.stringify(body)
         });
 
-        const data = await res.json();
-        
         if (!res.ok) {
-            const errDetail = data.error ? (data.error.message || JSON.stringify(data.error)) : res.statusText;
-            throw new Error(errDetail);
+            const errText = await res.text();
+            throw new Error(`HTTP ${res.status}: ${errText}`);
         }
 
+        const data = await res.json();
+        
         // 解析回應
         if (provider === 'gemini') {
             if (data.candidates && data.candidates[0].content) {
                 return data.candidates[0].content.parts.map(p => p.text).join('');
             }
         } else {
-            // OpenAI Format
-            if (data.choices && data.choices[0].message) {
-                // 處理 DeepSeek 或部分模型可能返回的 reasoning_content (思考過程)
-                // 這裡我們只顯示最終結果
-                return data.choices[0].message.content || "無內容回應";
+            if (data.choices && data.choices.length > 0) {
+                return data.choices[0].message.content;
             }
         }
-        
-        return "無法解析回應內容";
+        return "無回應內容";
     }
 </script>
 </body>
