@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (2025 焦點優化版)</title>
+    <title>AI 視障助理 (H1 標題焦點優化版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -12,6 +12,8 @@
             --bg-color: #000000;
             --text-color: #FFFFFF;
             --accent-color: #FFFF00;     /* 黃色高亮 */
+            --user-header-color: #0088ff; /* 用戶標題色 */
+            --ai-header-color: #FFFF00;   /* AI 標題色 */
             --border-color: #555;
             --input-bg: #1A1A1A;
             --button-bg: #FFFF00;
@@ -36,10 +38,11 @@
             font-size: 1.5rem; text-align: center; margin: 10px 0; color: #ccc; font-weight: bold;
         }
         
-        h2 { 
-            font-size: 1.4rem; color: var(--accent-color); 
-            border-bottom: 2px solid #333; padding-bottom: 5px; margin-top: 30px; 
-            outline: none; /* 移除點擊時的預設藍框，由 focus-visible 取代 */
+        /* 設定區標題 */
+        details h2 { 
+            font-size: 1.4rem; color: #ccc; 
+            border-bottom: 2px solid #333; padding-bottom: 5px; margin-top: 10px; 
+            display: inline-block;
         }
 
         input, select, textarea {
@@ -62,14 +65,32 @@
         summary { cursor: pointer; padding: 5px; }
         
         .message-area { min-height: 100px; padding-bottom: 20px; }
+        
+        /* 訊息區塊樣式 */
         .message {
-            background: #111; padding: 15px; margin-bottom: 15px;
-            border-left: 5px solid var(--accent-color);
+            background: #111; padding: 15px; margin-bottom: 25px;
+            border-left: 5px solid var(--border-color);
             overflow-wrap: break-word; word-break: break-word;
         }
-        .message.user { border-left-color: #0088ff; background: #0a0a1a; }
+        .message:focus { outline: none; border-left: 8px solid var(--accent-color); background: #222; }
+
+        /* H1 標題樣式 (輸入問題/回應結果) */
+        .message h1.msg-heading {
+            font-size: 1.4rem;
+            margin: 0 0 10px 0;
+            padding-bottom: 5px;
+            border-bottom: 1px dashed #444;
+            line-height: 1.3;
+        }
+
+        .message.user { border-left-color: var(--user-header-color); background: #0a0a1a; }
+        .message.user h1.msg-heading { color: var(--user-header-color); }
+        
+        .message.assistant { border-left-color: var(--ai-header-color); background: #1a1a0a; }
+        .message.assistant h1.msg-heading { color: var(--ai-header-color); }
+
         .message.error { border-left-color: #ff0000; background: #330000; }
-        .message.info { border-left-color: #88CCFF; background: #0a1a2a; } 
+        .message.error h1.msg-heading { color: #ff5555; }
 
         .controls-wrapper {
             position: fixed; bottom: 0; left: 0; right: 0;
@@ -111,7 +132,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (2025 焦點優化版)</h1>
+    <h1 class="app-title">AI 視障助理 (H1 標題焦點版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -142,7 +163,7 @@
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
             </div>
 
-            <!-- 新增 Timeout 設定 -->
+            <!-- Timeout 設定 -->
             <label for="timeout-setting">回應逾時 (秒):</label>
             <input type="number" id="timeout-setting" value="120" min="5" step="5">
 
@@ -157,9 +178,8 @@
         </div>
     </details>
 
-    <!-- 結果區 -->
-    <main>
-        <h2 id="result-heading" tabindex="-1">對話結果</h2>
+    <!-- 結果區 (移除舊標題，改為動態插入) -->
+    <main role="main">
         <div id="chat-output" class="message-area"></div>
         <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="width:100%; margin-bottom: 20px;">
             📋 複製 (Alt+C)
@@ -243,14 +263,13 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const settingsDetails = document.getElementById('settings-area');
-        if (!localStorage.getItem('visited_2025_focus_fixed')) {
+        if (!localStorage.getItem('visited_2025_h1_focus')) {
             settingsDetails.open = true;
-            localStorage.setItem('visited_2025_focus_fixed', 'true');
+            localStorage.setItem('visited_2025_h1_focus', 'true');
         }
         const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
         
-        // 讀取 Timeout 設定
         const savedTimeout = localStorage.getItem('timeout_setting');
         if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
 
@@ -263,28 +282,46 @@
         toast.className = 'show';
         if (type === 'error') toast.style.backgroundColor = '#ff4444';
         else toast.style.backgroundColor = 'rgba(255, 255, 0, 0.95)';
-        
         setTimeout(() => toast.className = '', 3000);
     }
 
+    // ★★★ 核心修改：addMessage 支援 H1 標題與回傳元素 ★★★
     function addMessage(role, content) {
         const div = document.createElement('div');
         div.className = `message ${role}`;
         
-        if (role === 'assistant' || role === 'info') {
-            div.innerHTML = marked.parse(content);
+        // 讓容器可聚焦，以便讀屏軟體能從這裡開始朗讀
+        div.tabIndex = -1; 
+
+        const header = document.createElement('h1');
+        header.className = 'msg-heading';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'markdown-body';
+
+        if (role === 'user') {
+            header.innerText = '輸入問題：';
+            contentDiv.innerText = content;
+        } else if (role === 'assistant') {
+            header.innerText = '回應結果：';
+            contentDiv.innerHTML = marked.parse(content);
             document.getElementById('copy-btn').classList.remove('hidden');
-            div.setAttribute('role', 'status'); 
         } else {
-            div.innerText = content;
+            // Error or Info
+            header.innerText = (role === 'error') ? '發生錯誤：' : '系統訊息：';
+            contentDiv.innerText = content;
         }
+
+        div.appendChild(header);
+        div.appendChild(contentDiv);
         
         const output = document.getElementById('chat-output');
         output.appendChild(div);
         
-        // 如果是 User 訊息，我們只要捲動就好，不搶焦點
-        // 如果是 Assistant 訊息，焦點會在 handleSubmit 完成後處理
+        // 只是添加訊息時捲動到底部，不搶焦點（焦點在 handleSubmit 控制）
         window.scrollTo(0, document.body.scrollHeight);
+        
+        return div; // 回傳 DOM 元素供後續聚焦使用
     }
 
     function handleProviderChange(save = true) {
@@ -474,7 +511,7 @@
     async function handleSubmit(e) {
         e.preventDefault();
         const inputField = document.getElementById('user-input');
-        const userInput = inputField.value.trim(); // 這裡不清除 value，保留文字
+        const userInput = inputField.value.trim(); // 保留文字，不立即清除
         const pKey = document.getElementById('provider-select').value;
         
         if (!userInput && !selectedFile) {
@@ -491,7 +528,6 @@
         // 讀取逾時設定
         const timeoutSec = parseInt(document.getElementById('timeout-setting').value) || 120;
         
-        // 建立 AbortController 用於超時取消請求
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
@@ -501,30 +537,34 @@
                 fileData = await readFileAsBase64(selectedFile);
             }
 
-            // 傳入 controller.signal
             const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
-            addMessage('assistant', response);
             
-            // ★★★ 成功後：清除輸入、轉移焦點 ★★★
-            cleanUpAndFocus();
+            // 加入 AI 回應，並取得 DOM 元素
+            const aiMsgDiv = addMessage('assistant', response);
+            
+            // ★★★ 成功後：清除輸入、並聚焦到 AI 回應容器 ★★★
+            cleanUpAndFocus(aiMsgDiv);
 
         } catch (err) {
-            // 判斷是否為逾時錯誤
+            let errMsg = "";
             if (err.name === 'AbortError' || err.message.includes('aborted')) {
-                addMessage('error', `AI 模型沒有回應 (超過 ${timeoutSec} 秒)`);
+                errMsg = `AI 模型沒有回應 (超過 ${timeoutSec} 秒)`;
             } else {
-                addMessage('error', `錯誤: ${err.message}`);
+                errMsg = `錯誤: ${err.message}`;
             }
-            // ★★★ 失敗後：同樣清除輸入、轉移焦點 ★★★
-            cleanUpAndFocus();
+            // 加入錯誤訊息，並取得 DOM 元素
+            const errorDiv = addMessage('error', errMsg);
+            
+            // ★★★ 失敗後：同樣清除輸入、聚焦錯誤訊息 ★★★
+            cleanUpAndFocus(errorDiv);
 
         } finally {
-            clearTimeout(timeoutId); // 清除計時器
+            clearTimeout(timeoutId);
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
         }
     }
 
-    function cleanUpAndFocus() {
+    function cleanUpAndFocus(targetElement) {
         // 1. 清除輸入框
         document.getElementById('user-input').value = "";
         
@@ -533,12 +573,15 @@
         document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
         document.getElementById('file-input').value = "";
 
-        // 3. 轉移焦點到結果標題
-        const resultHeading = document.getElementById('result-heading');
-        resultHeading.focus();
-        
-        // 讓螢幕捲動到正確位置
-        resultHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // 3. 轉移焦點到目標元素 (AI 回應區塊)
+        if (targetElement) {
+            // 確保元素在視野內
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // 延遲一點點確保 DOM 渲染完畢後聚焦
+            setTimeout(() => {
+                targetElement.focus();
+            }, 100);
+        }
     }
 
     function readFileAsBase64(file) {
@@ -550,7 +593,6 @@
         });
     }
 
-    // ★★★ 修改 callAI 支援 signal ★★★
     async function callAI(provider, text, fileBase64, mimeType, signal) {
         const apiKey = document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
@@ -611,7 +653,6 @@
             body = { model: model, messages: messages };
         }
 
-        // Fetch 請求加入 signal
         const res = await fetch(url, {
             method: 'POST',
             headers: headers,
