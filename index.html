@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (2025 最新排序版)</title>
+    <title>AI 視障助理 (2025 連線修正版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -11,7 +11,7 @@
         :root {
             --bg-color: #000000;
             --text-color: #FFFFFF;
-            --accent-color: #FFFF00;     /* 黃色高亮，適合視障使用 */
+            --accent-color: #FFFF00;     /* 黃色高亮 */
             --border-color: #555;
             --input-bg: #1A1A1A;
             --button-bg: #FFFF00;
@@ -29,7 +29,7 @@
         .container {
             max-width: 900px;
             margin: 0 auto;
-            padding: 10px 10px 350px 10px; /* 底部留白給固定控制列 */
+            padding: 10px 10px 350px 10px;
         }
 
         .app-title { 
@@ -54,6 +54,7 @@
             border: 2px solid #fff; padding: 12px; font-size: 1.1rem; font-weight: bold;
             border-radius: 8px; margin-top: 5px; cursor: pointer; touch-action: manipulation;
         }
+        button:disabled { filter: grayscale(100%); opacity: 0.7; }
         button.secondary { background-color: #333; color: #fff; border-color: #777; }
         
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
@@ -109,7 +110,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (2025 最新排序版)</h1>
+    <h1 class="app-title">AI 視障助理 (2025 連線修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -121,19 +122,19 @@
             <label for="provider-select">AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (推薦)</option>
-                <option value="openrouter">OpenRouter (DeepSeek/Claude...)</option>
-                <option value="openai">OpenAI (GPT-5/4o)</option>
+                <option value="openrouter">OpenRouter (多模型/自動排序)</option>
+                <option value="openai">OpenAI (GPT)</option>
                 <option value="groq">Groq (Llama)</option>
                 <option value="perplexity">Perplexity (搜尋)</option>
             </select>
 
-            <label for="api-key">API Key:</label>
+            <label for="api-key">API Key (OpenRouter/Gemini/Groq 必填):</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
-            <label for="model-select">模型選擇 (依照日期由新到舊排序):</label>
+            <label for="model-select">模型選擇 (日期由新到舊):</label>
             <div class="row" style="margin-bottom: 10px;">
                 <select id="model-select" style="margin-bottom:0;" onchange="handleModelSelectChange()"></select>
-                <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="更新清單">🔄</button>
+                <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="從網路更新模型清單">🔄 更新</button>
             </div>
             
             <div id="custom-model-wrapper" class="hidden">
@@ -145,7 +146,7 @@
 
             <div class="row">
                 <button type="button" onclick="saveSettings()">💾 儲存</button>
-                <button type="button" onclick="restoreDefaults()" class="secondary">↩️ 預設</button>
+                <button type="button" onclick="restoreDefaults()" class="secondary">↩️ 恢復預設</button>
                 <button type="button" onclick="showHelp()" class="secondary" style="background:#004488; color:white;">📖 說明</button>
             </div>
         </div>
@@ -176,7 +177,6 @@
         </div>
 
         <div class="row">
-            <!-- 允許任何檔案，不作前端阻擋 -->
             <input type="file" id="file-input" class="visually-hidden" accept="*/*" onchange="handleFileSelect()">
             <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u">
                 📷 拍攝/檔案 (Alt+U)
@@ -198,14 +198,14 @@
 若要上網搜尋就務必搜尋 2025 年 12 月的最新資料。`;
 
     const HELP_CONTENT = `
-# 使用說明 (2025 日期排序版)
+# 使用說明 (2025 連線修正版)
 
-本版本模型清單已依照 **發佈日期 (由新到舊)** 排序，確保預設選用最新的模型。
+修正了「更新清單」功能。
+現在點擊 **🔄 更新** 按鈕時，程式會從網路下載最新的模型列表，並自動依照**發佈日期 (由新到舊)** 進行排序 (適用於 OpenRouter 與 Groq)。
 
-## 檔案支援
-您可上傳 **任何檔案** (PDF, 影片, 音訊, 圖片)。
-*   若模型不支援 (如 GPT-4 傳影片)，系統會直接顯示 API 回傳的錯誤訊息。
-*   **推薦**：Gemini 系列目前對各類檔案支援度最高。
+## 支援功能
+*   **檔案上傳**：無限制檔案類型，若模型不支援會直接顯示錯誤。
+*   **模型排序**：OpenRouter 的模型清單非常長，程式會自動將 2025 最新模型排在最上面。
 
 ## 快速鍵
 *   **Alt + S**：設定
@@ -214,63 +214,40 @@
 *   **Alt + C**：複製
 `;
 
-    // === 模型資料庫 (2025/12/04 更新) ===
-    // 排序邏輯：日期越新越上面
+    // 預設清單 (手動維護的最新排序)
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
-            // 預設使用最新的 1204 實驗版或 3.0 Pro
             defaultModel: "gemini-exp-1204", 
             canFetch: true,
-            models: [
-                "gemini-exp-1204",         // 2025/12/04 (今日發佈)
-                "gemini-3.0-pro-preview",  // 2025/11/18
-                "gemini-2.5-flash",        // 2025/09 (穩定版)
-                "gemini-2.5-pro"           // 2025/09
-            ],
+            models: ["gemini-exp-1204", "gemini-3.0-pro-preview", "gemini-2.5-flash"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "deepseek/deepseek-v3.2",
             canFetch: true,
-            models: [
-                "deepseek/deepseek-v3.2",         // 2025/12/01
-                "google/gemini-3.0-pro-preview",  // 2025/11/18
-                "openai/gpt-5.1",                 // 2025/11/12
-                "anthropic/claude-3.7-sonnet"     // 2025/02/24
-            ],
+            models: ["deepseek/deepseek-v3.2", "google/gemini-3.0-pro-preview", "anthropic/claude-3.7-sonnet", "openai/gpt-5.1"],
             listUrl: "https://openrouter.ai/api/v1/models"
         },
         openai: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "gpt-4o-2025-11-20",
+            defaultModel: "gpt-5.1",
             canFetch: false,
-            models: [
-                "gpt-4o-2025-11-20", // 2025/11/20 (最新快照)
-                "gpt-5.1",           // 2025/11/12 (首發版本)
-                "gpt-4o-mini"        // 2025/07
-            ]
+            models: ["gpt-5.1", "gpt-4o-2025-11-20", "gpt-4o-mini"]
         },
         groq: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "llama-3.3-70b-versatile",
             canFetch: true, 
-            models: [
-                "llama-3.3-70b-versatile", // 2024/12/06
-                "mixtral-8x22b-instruct-v0.1"
-            ],
+            models: ["llama-3.3-70b-versatile"],
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         perplexity: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "sonar-deep-research",
             canFetch: false,
-            models: [
-                "sonar-deep-research", // 持續更新 (最新)
-                "sonar-reasoning-pro",
-                "sonar-pro"
-            ]
+            models: ["sonar-deep-research", "sonar-reasoning-pro"]
         }
     };
 
@@ -279,9 +256,9 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const settingsDetails = document.getElementById('settings-area');
-        if (!localStorage.getItem('visited_sorted_v1')) {
+        if (!localStorage.getItem('visited_2025_fixed_fetch')) {
             settingsDetails.open = true;
-            localStorage.setItem('visited_sorted_v1', 'true');
+            localStorage.setItem('visited_2025_fixed_fetch', 'true');
         }
         const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
@@ -295,7 +272,6 @@
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
-        // 如果沒有儲存過模型，則使用 conf.defaultModel (已經是排第一位的最新模型)
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         currentActiveModelId = savedModel;
         
@@ -311,11 +287,10 @@
 
     function updateModelSelect(models, targetModel) {
         const select = document.getElementById('model-select');
-        const customWrapper = document.getElementById('custom-model-wrapper');
-        const customInput = document.getElementById('custom-model-input');
         select.innerHTML = "";
-        
         let found = false;
+        
+        // 建立選單
         models.forEach(m => {
             let opt = document.createElement('option');
             opt.value = m; opt.innerText = m;
@@ -327,10 +302,99 @@
         customOpt.value = "CUSTOM_ENTRY"; customOpt.innerText = "✏️ 自行輸入模型 ID...";
         select.appendChild(customOpt);
 
+        const customWrapper = document.getElementById('custom-model-wrapper');
+        const customInput = document.getElementById('custom-model-input');
+
         if (found) {
-            select.value = targetModel; customWrapper.classList.add('hidden');
+            select.value = targetModel; 
+            customWrapper.classList.add('hidden');
         } else {
-            select.value = "CUSTOM_ENTRY"; customWrapper.classList.remove('hidden'); customInput.value = targetModel;
+            select.value = "CUSTOM_ENTRY"; 
+            customWrapper.classList.remove('hidden'); 
+            customInput.value = targetModel;
+        }
+    }
+
+    // ★★★ 關鍵修正：實作網路列表取得功能 ★★★
+    async function fetchOnlineModels() {
+        const pKey = document.getElementById('provider-select').value;
+        const apiKey = document.getElementById('api-key').value;
+        const conf = PROVIDERS[pKey];
+
+        if (!conf.canFetch) {
+            showStatus("此服務商不支援自動更新", "info"); return;
+        }
+        
+        // Gemini 與 Groq 需要 API Key
+        if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
+            showStatus("請先輸入 API Key 才能取得清單", "error");
+            document.getElementById('api-key').focus();
+            return;
+        }
+
+        const btn = document.getElementById('refresh-btn');
+        const originalText = btn.innerText;
+        btn.innerText = "⏳ 載入中...";
+        btn.disabled = true;
+
+        try {
+            let newModels = [];
+
+            if (pKey === 'openrouter') {
+                // OpenRouter 不強制 API Key 即可取得公開列表
+                const res = await fetch("https://openrouter.ai/api/v1/models");
+                const data = await res.json();
+                
+                if (data.data && Array.isArray(data.data)) {
+                    // ★ 排序邏輯：依照 created 時間戳記由大到小 (最新的在最上面) ★
+                    newModels = data.data
+                        .sort((a, b) => (b.created || 0) - (a.created || 0))
+                        .map(m => m.id);
+                }
+            } 
+            else if (pKey === 'groq') {
+                const res = await fetch(conf.listUrl, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                const data = await res.json();
+                if (data.data && Array.isArray(data.data)) {
+                    // Groq 也支援 created 排序
+                    newModels = data.data
+                        .sort((a, b) => (b.created || 0) - (a.created || 0))
+                        .map(m => m.id);
+                }
+            }
+            else if (pKey === 'gemini') {
+                const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
+                const data = await res.json();
+                if (data.models && Array.isArray(data.models)) {
+                    // Google API 沒有日期欄位，我們保留 "gemini" 相關模型
+                    newModels = data.models
+                        .map(m => m.name.replace("models/", ""))
+                        .filter(m => m.includes("gemini") && !m.includes("1.0")); // 過濾掉舊的 1.0
+                    
+                    // 為了確保最佳體驗，我們手動將 known models (如 exp-1204) 強制置頂
+                    const topModels = conf.models; // 這些是手動排過序的
+                    // 合併並去重
+                    newModels = Array.from(new Set([...topModels, ...newModels]));
+                }
+            }
+
+            if (newModels.length > 0) {
+                // 更新下拉選單
+                updateModelSelect(newModels, newModels[0]); 
+                currentActiveModelId = newModels[0]; // 自動選取最新的
+                showStatus(`更新成功：共 ${newModels.length} 個模型 (已按日期排序)`);
+            } else {
+                showStatus("未找到可用模型", "error");
+            }
+
+        } catch (e) {
+            console.error(e);
+            showStatus(`更新失敗: ${e.message}`, "error");
+        } finally {
+            btn.innerText = originalText;
+            btn.disabled = false;
         }
     }
 
@@ -365,10 +429,9 @@
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
-        // 恢復時，也會重置為最新的 defaultModel
         localStorage.removeItem(`${pKey}_model`);
         handleProviderChange(true);
-        showStatus("已恢復預設 (選用最新模型)");
+        showStatus("已恢復預設");
     }
 
     function handleFileSelect() {
@@ -452,10 +515,7 @@
             let parts = [{ text: finalPrompt }];
             if (fileBase64) {
                 parts.unshift({
-                    inline_data: {
-                        mime_type: mimeType, 
-                        data: fileBase64
-                    }
+                    inline_data: { mime_type: mimeType, data: fileBase64 }
                 });
             }
             const searchEnabled = document.getElementById('enable-search').checked;
@@ -465,7 +525,6 @@
             };
 
         } else {
-            // OpenAI 標準相容介面 (Groq, OpenRouter, Perplexity)
             if (provider === 'openrouter') url = "https://openrouter.ai/api/v1/chat/completions";
             else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
             else if (provider === 'perplexity') url = "https://api.perplexity.ai/chat/completions";
@@ -479,10 +538,7 @@
             if (fileBase64) {
                 userContent.push({
                     type: "image_url",
-                    image_url: {
-                        // 強制傳送，如果模型不支援，API 會回傳錯誤 (符合使用者需求)
-                        url: `data:${mimeType};base64,${fileBase64}` 
-                    }
+                    image_url: { url: `data:${mimeType};base64,${fileBase64}` }
                 });
             }
 
@@ -507,7 +563,6 @@
         }
 
         const data = await res.json();
-        
         if (provider === 'gemini') return data.candidates?.[0]?.content?.parts?.[0]?.text || "無回應";
         return data.choices?.[0]?.message?.content || "無回應";
     }
@@ -517,11 +572,8 @@
         div.className = `message ${role}`;
         div.tabIndex = 0;
         
-        if (role === 'error') {
-            div.innerText = text;
-        } else {
-            div.innerHTML = marked.parse(text);
-        }
+        if (role === 'error') div.innerText = text;
+        else div.innerHTML = marked.parse(text);
         
         const output = document.getElementById('chat-output');
         output.appendChild(div);
@@ -555,12 +607,6 @@
         helpDiv.tabIndex = -1;
         output.appendChild(helpDiv);
         setTimeout(() => helpDiv.focus(), 100);
-    }
-    
-    // 更新清單功能，這部分僅為輔助，實作上仍需依賴 API 回傳結果進行排序
-    // 這裡保留空殼以避免報錯
-    async function fetchOnlineModels() {
-        alert("此功能會從服務商取得即時清單，請注意 API 可能不會依照日期排序回傳。");
     }
 </script>
 </body>
