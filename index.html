@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (2025 最新版)</title>
+    <title>AI 視障助理 (2025 修正版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -135,6 +135,11 @@
 
         .hidden { display: none !important; }
         .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+        
+        /* 輔助文字輸入框 */
+        #custom-model-wrapper {
+            margin-top: -5px; margin-bottom: 10px;
+        }
 
         /* Markdown 樣式微調 */
         .markdown-body h1, .markdown-body h2, .markdown-body h3 { border-bottom: none; margin-top: 1.5em; color: var(--link-color); }
@@ -155,7 +160,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (2025.12 最新版)</h1>
+    <h1 class="app-title">AI 視障助理 (2025 修正版)</h1>
 
     <!-- 區域 1: 設定 -->
     <details id="settings-area">
@@ -167,20 +172,25 @@
             <label for="provider-select">AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (免費/3.0 Pro)</option>
-                <option value="openrouter">OpenRouter (DeepSeek V3.2)</option>
-                <option value="groq">Groq (Llama 3.3 極速)</option>
+                <option value="openrouter">OpenRouter (DeepSeek V3)</option>
+                <option value="groq">Groq (Llama 3.3)</option>
                 <option value="openai">OpenAI (GPT-5.1)</option>
-                <option value="perplexity">Perplexity (Sonar Deep Search)</option>
+                <option value="perplexity">Perplexity (搜尋引擎)</option>
             </select>
 
             <label for="api-key">API Key (金鑰):</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
-            <label for="model-input">模型 ID:</label>
+            <label for="model-select">模型選擇:</label>
             <div class="row" style="margin-bottom: 10px;">
-                <input type="text" id="model-input" list="model-list" placeholder="選擇或輸入 ID" style="margin-bottom:0;" autocomplete="off">
-                <datalist id="model-list"></datalist>
+                <!-- 改用 select 以確保選單不會被過濾 -->
+                <select id="model-select" style="margin-bottom:0;" onchange="handleModelSelectChange()"></select>
                 <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="更新模型清單" aria-label="更新模型清單">🔄</button>
+            </div>
+            
+            <!-- 自訂模型輸入框，預設隱藏 -->
+            <div id="custom-model-wrapper" class="hidden">
+                <input type="text" id="custom-model-input" placeholder="請手動輸入模型 ID (例如 gemini-1.5-pro)" onchange="handleCustomInputChange()">
             </div>
 
             <label for="system-prompt" id="prompt-label">角色指令 (目前服務商):</label>
@@ -247,55 +257,41 @@
 圖片包含文字就作 OCR 然後全部顯示出來。
 若要上網搜尋就務必搜尋 2025 年 12 月的最新資料。`;
 
-    // === 說明文件內容 (Markdown) ===
+    // === 說明文件內容 ===
     const HELP_CONTENT = `
-# AI 視障助理使用手冊 (2025.12 版)
+# AI 視障助理使用手冊 (2025 修正版)
 
-整合今日 (2025/12/04) 最新發布的 Gemini 3.0 Pro 與 GPT-5.1，為您提供最準確的視覺與文字輔助。
+修正了下拉選單無法顯示所有模型的問題，並整合最新 Gemini 3.0 / GPT-5.1 資料。
 
-## 快速鍵列表
+## 快速鍵
+*   **Alt + S**：設定。
+*   **Alt + U**：拍攝/檔案。
+*   **Alt + I**：輸入框。
+*   **Alt + C**：複製結果。
 
-*   **Alt + S**：開啟/關閉「設定」。
-*   **Alt + U**：選擇檔案或開啟相機。
-*   **Alt + I**：跳至「文字輸入框」。
-*   **Alt + C**：複製 AI 的回答。
-
-## 今日最新模型 (2025/12/04)
-
-*   **Gemini (推薦)**：預設 \`gemini-3.0-pro-preview\`。Google 最新旗艦，11/18 剛發布。支援最強的 PDF 與圖片閱讀，且在 AI Studio 通常有免費額度。
-*   **OpenAI**：支援 \`gpt-5.1\` (最新版) 與 \`gpt-5.1-thinking\`。
-*   **DeepSeek (OpenRouter)**：支援 \`deepseek/deepseek-v3.2\`，被譽為目前的開源之王，推理能力極強。
-*   **Perplexity**：推薦 \`sonar-deep-research\`，專門用於深度聯網搜尋今日新聞。
-
-## 使用步驟
-
-### 1. 圖片或文件辨識
-1.  按下 **Alt + U**。
-2.  選擇圖片或 PDF (PDF 建議使用 Gemini 模式)。
-3.  系統將使用 Gemini 3.0 Pro 進行分析。
-
-### 2. 設定
-*   若發現模型無法使用，請按設定中的「🔄」更新清單，或切換回舊版穩定的 \`gemini-2.5-flash\`。
+## 模型選擇說明
+現在「模型選擇」改為下拉選單，保證所有選項可見。
+若您需要的模型不在清單中，請選擇選單最下方的「**✏️ 自行輸入模型 ID...**」，即可手動輸入。
 `;
 
-    // === 1. 模型資料庫 (2025/12/04 最新更新) ===
+    // === 1. 模型資料庫 (2025/12/04 最新) ===
     const PROVIDERS = {
         gemini: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "gemini-3.0-pro-preview", // Google 最新發布
+            defaultModel: "gemini-3.0-pro-preview", 
             canFetch: true,
             models: [
-                "gemini-3.0-pro-preview",    // 2025.11.18 發布
-                "gemini-3.0-deep-think",     // 深度思考版
-                "gemini-2.5-flash",          // 穩定快速版
+                "gemini-3.0-pro-preview", 
+                "gemini-3.0-deep-think",
+                "gemini-2.5-flash",
                 "gemini-2.5-pro",
-                "gemini-exp-1204"            // 今日實驗版
+                "gemini-exp-1204"
             ],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "deepseek/deepseek-v3.2", // 2025.12 最新開源王者
+            defaultModel: "deepseek/deepseek-v3.2",
             canFetch: true,
             models: [
                 "deepseek/deepseek-v3.2",
@@ -308,7 +304,7 @@
         },
         groq: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "llama-3.3-70b-versatile", // Groq 目前主力
+            defaultModel: "llama-3.3-70b-versatile",
             canFetch: true, 
             models: [
                 "llama-3.3-70b-versatile",
@@ -319,7 +315,7 @@
         },
         openai: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "gpt-5.1", // 2025.11 最新
+            defaultModel: "gpt-5.1",
             canFetch: false,
             models: [
                 "gpt-5.1", 
@@ -330,7 +326,7 @@
         },
         perplexity: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "sonar-deep-research", // 最新深度搜尋
+            defaultModel: "sonar-deep-research",
             canFetch: false,
             models: [
                 "sonar-deep-research",
@@ -342,12 +338,12 @@
 
     // === 2. 初始化 ===
     document.addEventListener('DOMContentLoaded', () => {
-        const hasVisited = localStorage.getItem('app_visited_2025_dec');
+        const hasVisited = localStorage.getItem('app_visited_fix_v1');
         const settingsDetails = document.getElementById('settings-area');
 
         if (!hasVisited) {
             settingsDetails.open = true;
-            localStorage.setItem('app_visited_2025_dec', 'true');
+            localStorage.setItem('app_visited_fix_v1', 'true');
         }
 
         const savedProvider = localStorage.getItem('provider') || 'gemini';
@@ -359,21 +355,28 @@
     });
 
     // === 3. 設定邏輯 ===
+    // 用於儲存「目前實際使用的模型 ID」，無論是選單選的還是手動輸入的
+    let currentActiveModelId = "";
+
     function handleProviderChange(save = true) {
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
 
-        // 載入該服務商的設定
+        // 讀取設定
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
-        document.getElementById('model-input').value = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
+        
+        // 讀取上次存的模型，如果沒有則用預設
+        const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
+        currentActiveModelId = savedModel;
 
-        // 更新標籤以顯示當前服務商
         const providerName = document.querySelector(`#provider-select option[value="${pKey}"]`).text.split(' ')[0];
         document.getElementById('prompt-label').innerText = `角色指令 (${providerName}):`;
 
-        updateDatalist(conf.models);
-
+        // 更新下拉選單
+        updateModelSelect(conf.models, savedModel);
+        
+        // 更新按鈕狀態
         const searchCheck = document.getElementById('enable-search');
         if (pKey === 'gemini' || pKey === 'perplexity') {
             searchCheck.disabled = false;
@@ -389,22 +392,75 @@
         if (save) localStorage.setItem('provider', pKey);
     }
 
-    function updateDatalist(models) {
-        const dataList = document.getElementById('model-list');
-        dataList.innerHTML = "";
+    function updateModelSelect(models, targetModel) {
+        const select = document.getElementById('model-select');
+        const customWrapper = document.getElementById('custom-model-wrapper');
+        const customInput = document.getElementById('custom-model-input');
+        
+        select.innerHTML = "";
+        let found = false;
+
+        // 填入標準模型
         models.forEach(m => {
             let opt = document.createElement('option');
             opt.value = m;
-            dataList.appendChild(opt);
+            opt.innerText = m;
+            if (m === targetModel) found = true;
+            select.appendChild(opt);
         });
+
+        // 填入「自訂」選項
+        let customOpt = document.createElement('option');
+        customOpt.value = "CUSTOM_ENTRY";
+        customOpt.innerText = "✏️ 自行輸入模型 ID...";
+        select.appendChild(customOpt);
+
+        // 決定選取哪一個
+        if (found) {
+            select.value = targetModel;
+            customWrapper.classList.add('hidden');
+        } else {
+            // 如果儲存的模型不在清單中 (例如舊的 ID)，直接切換到自訂模式
+            select.value = "CUSTOM_ENTRY";
+            customWrapper.classList.remove('hidden');
+            customInput.value = targetModel;
+        }
+    }
+
+    // 當下拉選單改變時
+    function handleModelSelectChange() {
+        const select = document.getElementById('model-select');
+        const customWrapper = document.getElementById('custom-model-wrapper');
+        const customInput = document.getElementById('custom-model-input');
+
+        if (select.value === "CUSTOM_ENTRY") {
+            customWrapper.classList.remove('hidden');
+            customInput.focus();
+            currentActiveModelId = customInput.value; // 若為空則為空
+        } else {
+            customWrapper.classList.add('hidden');
+            currentActiveModelId = select.value;
+        }
+    }
+
+    // 當自訂輸入框改變時
+    function handleCustomInputChange() {
+        currentActiveModelId = document.getElementById('custom-model-input').value.trim();
     }
 
     function saveSettings() {
         const pKey = document.getElementById('provider-select').value;
         const currentPrompt = document.getElementById('system-prompt').value;
         
+        // 確保目前的模型 ID 有被更新 (如果是自訂模式)
+        if (document.getElementById('model-select').value === "CUSTOM_ENTRY") {
+            currentActiveModelId = document.getElementById('custom-model-input').value.trim();
+        } else {
+            currentActiveModelId = document.getElementById('model-select').value;
+        }
+
         localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
-        localStorage.setItem(`${pKey}_model`, document.getElementById('model-input').value.trim());
+        localStorage.setItem(`${pKey}_model`, currentActiveModelId);
         localStorage.setItem(`${pKey}_prompt`, currentPrompt);
         
         showStatus("設定已儲存");
@@ -414,7 +470,12 @@
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
-        document.getElementById('model-input').value = PROVIDERS[pKey].defaultModel;
+        
+        // 恢復模型
+        const defModel = PROVIDERS[pKey].defaultModel;
+        updateModelSelect(PROVIDERS[pKey].models, defModel);
+        currentActiveModelId = defModel;
+
         showStatus("已恢復預設指令與模型");
     }
 
@@ -495,7 +556,6 @@
                 const res = await fetch(conf.listUrl.replace('{KEY}', key));
                 if (!res.ok) throw new Error("API Error: " + res.status);
                 const data = await res.json();
-                // 過濾並保留 3.0, 2.0 等新模型
                 newModels = (data.models || [])
                     .map(m => m.name.replace("models/", ""))
                     .filter(m => (m.includes("gemini-3") || m.includes("gemini-2.5")) && !m.includes("1.0"));
@@ -516,9 +576,10 @@
             }
 
             if (newModels.length > 0) {
-                // 合併預設與線上模型，去除重複
+                // 合併新模型
                 const allModels = Array.from(new Set([...conf.models, ...newModels]));
-                updateDatalist(allModels);
+                // 更新下拉選單
+                updateModelSelect(allModels, currentActiveModelId);
                 showStatus(`更新成功，共 ${allModels.length} 個模型`);
             } else {
                 showStatus("未找到可用模型");
@@ -537,8 +598,14 @@
         e.preventDefault();
         const pKey = document.getElementById('provider-select').value;
         const key = document.getElementById('api-key').value;
-        const model = document.getElementById('model-input').value;
-        const prompt = document.getElementById('system-prompt').value; // 直接讀取目前文字框的值
+        
+        // 取得最終模型 ID (如果是自訂，取輸入框的值)
+        let finalModel = document.getElementById('model-select').value;
+        if (finalModel === "CUSTOM_ENTRY") {
+            finalModel = document.getElementById('custom-model-input').value.trim();
+        }
+        
+        const prompt = document.getElementById('system-prompt').value; 
         const userInput = document.getElementById('user-input');
         const fileInput = document.getElementById('file-input');
         const output = document.getElementById('chat-output');
@@ -556,6 +623,11 @@
             showStatus("請輸入文字或選擇檔案");
             return;
         }
+        
+        if (!finalModel) {
+            showStatus("模型 ID 不能為空", 'error');
+            return;
+        }
 
         submitBtn.disabled = true;
         submitBtn.innerText = "處理中...";
@@ -570,10 +642,9 @@
         // 建立回應區塊
         const responseDiv = document.createElement('div');
         responseDiv.className = 'message';
-        
         responseDiv.setAttribute('role', 'status'); 
         responseDiv.setAttribute('aria-live', 'polite');
-        responseDiv.innerText = "🤔 正在思考並分析 (Model: " + model + ")...";
+        responseDiv.innerText = "🤔 正在思考並分析 (Model: " + finalModel + ")...";
         output.appendChild(responseDiv);
         
         document.getElementById('copy-btn').classList.add('hidden');
@@ -594,18 +665,16 @@
             const textPrompt = userInput.value || "請詳細描述這個檔案的內容，如果是文字請辨識出來。";
 
             if (pKey === 'gemini') {
-                text = await callGemini(key, model, prompt, textPrompt, base64, mime);
+                text = await callGemini(key, finalModel, prompt, textPrompt, base64, mime);
             } else {
-                text = await callOpenAICompatible(pKey, key, model, prompt, textPrompt, base64, mime);
+                text = await callOpenAICompatible(pKey, key, finalModel, prompt, textPrompt, base64, mime);
             }
 
             // === 確保朗讀 ===
             responseDiv.innerHTML = marked.parse(text);
             responseDiv.classList.add('markdown-body');
-            
             responseDiv.removeAttribute('role'); 
             responseDiv.removeAttribute('aria-live'); 
-            
             responseDiv.setAttribute('tabindex', '-1'); 
             responseDiv.setAttribute('role', 'article'); 
             responseDiv.setAttribute('aria-label', 'AI 回答結果'); 
@@ -622,12 +691,10 @@
 
         } catch (err) {
             responseDiv.className = 'message error';
-            
             let errMsg = err.message;
             if (errMsg.includes('404') || errMsg.includes('not found')) {
-                errMsg += "\n(提示: 若 " + model + " 尚未對您的帳號開放，請嘗試 gemini-2.5-flash)";
+                errMsg += "\n(提示: 若 " + finalModel + " 無法使用，請嘗試切換其他模型)";
             }
-            
             responseDiv.innerText = "錯誤: " + errMsg;
             
             responseDiv.setAttribute('tabindex', '-1');
@@ -635,7 +702,6 @@
             setTimeout(() => {
                 responseDiv.focus();
             }, 100);
-            
             showStatus("發生錯誤", 'error');
         } finally {
             submitBtn.disabled = false;
