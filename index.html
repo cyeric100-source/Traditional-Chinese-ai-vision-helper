@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (2025 聯網修正終極版)</title>
+    <title>AI 視障助理 (2025 焦點優化版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -39,6 +39,7 @@
         h2 { 
             font-size: 1.4rem; color: var(--accent-color); 
             border-bottom: 2px solid #333; padding-bottom: 5px; margin-top: 30px; 
+            outline: none; /* 移除點擊時的預設藍框，由 focus-visible 取代 */
         }
 
         input, select, textarea {
@@ -54,7 +55,7 @@
             border: 2px solid #fff; padding: 12px; font-size: 1.1rem; font-weight: bold;
             border-radius: 8px; margin-top: 5px; cursor: pointer; touch-action: manipulation;
         }
-        button:disabled { filter: grayscale(100%); opacity: 0.7; }
+        button:disabled { filter: grayscale(100%); opacity: 0.7; cursor: not-allowed; }
         button.secondary { background-color: #333; color: #fff; border-color: #777; }
         
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
@@ -110,7 +111,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (2025 聯網修正版)</h1>
+    <h1 class="app-title">AI 視障助理 (2025 焦點優化版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -140,6 +141,10 @@
             <div id="custom-model-wrapper" class="hidden">
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
             </div>
+
+            <!-- 新增 Timeout 設定 -->
+            <label for="timeout-setting">回應逾時 (秒):</label>
+            <input type="number" id="timeout-setting" value="120" min="5" step="5">
 
             <label for="system-prompt">角色指令:</label>
             <textarea id="system-prompt" rows="5"></textarea>
@@ -197,7 +202,6 @@
 若包含文字就作 OCR 然後全部顯示出來。
 若要上網搜尋就務必搜尋 2025 年 12 月的最新資料。`;
 
-    // 預設清單
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
@@ -239,12 +243,17 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const settingsDetails = document.getElementById('settings-area');
-        if (!localStorage.getItem('visited_2025_fixed_final')) {
+        if (!localStorage.getItem('visited_2025_focus_fixed')) {
             settingsDetails.open = true;
-            localStorage.setItem('visited_2025_fixed_final', 'true');
+            localStorage.setItem('visited_2025_focus_fixed', 'true');
         }
         const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
+        
+        // 讀取 Timeout 設定
+        const savedTimeout = localStorage.getItem('timeout_setting');
+        if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
+
         handleProviderChange(false);
     });
 
@@ -265,7 +274,6 @@
         if (role === 'assistant' || role === 'info') {
             div.innerHTML = marked.parse(content);
             document.getElementById('copy-btn').classList.remove('hidden');
-            // 讓讀屏軟體也能讀取新訊息
             div.setAttribute('role', 'status'); 
         } else {
             div.innerText = content;
@@ -274,8 +282,8 @@
         const output = document.getElementById('chat-output');
         output.appendChild(div);
         
-        // 自動捲動並聚焦標題
-        document.getElementById('result-heading').focus(); 
+        // 如果是 User 訊息，我們只要捲動就好，不搶焦點
+        // 如果是 Assistant 訊息，焦點會在 handleSubmit 完成後處理
         window.scrollTo(0, document.body.scrollHeight);
     }
 
@@ -292,7 +300,6 @@
         updateModelSelect(conf.models, savedModel);
         
         const searchCheck = document.getElementById('enable-search');
-        // 修正：OpenRouter 也可以使用聯網搜尋
         const allowSearch = ['gemini', 'perplexity', 'openrouter'].includes(pKey);
         searchCheck.disabled = !allowSearch;
         
@@ -357,10 +364,9 @@
             if (pKey === 'openrouter') {
                 const res = await fetch("https://openrouter.ai/api/v1/models");
                 const data = await res.json();
-                
                 if (data.data && Array.isArray(data.data)) {
                     newModels = data.data
-                        .sort((a, b) => (b.created || 0) - (a.created || 0)) // 日期排序
+                        .sort((a, b) => (b.created || 0) - (a.created || 0))
                         .map(m => m.id);
                 }
             } 
@@ -382,8 +388,7 @@
                     newModels = data.models
                         .map(m => m.name.replace("models/", ""))
                         .filter(m => m.includes("gemini") && !m.includes("1.0"));
-                    const topModels = conf.models;
-                    newModels = Array.from(new Set([...topModels, ...newModels]));
+                    newModels = Array.from(new Set([...conf.models, ...newModels]));
                 }
             }
 
@@ -429,30 +434,22 @@
         localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
         localStorage.setItem(`${pKey}_model`, currentActiveModelId);
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
+        localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
+        
         showStatus("設定已儲存"); document.getElementById('settings-area').open = false;
     }
 
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
+        document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
         handleProviderChange(true);
         showStatus("已恢復預設");
     }
 
     function showHelp() {
-        const helpText = `
-### 快速鍵
-- Alt+S: 設定
-- Alt+U: 上傳檔案
-- Alt+I: 輸入框
-- Alt+C: 複製結果
-
-### 關於聯網
-- OpenRouter: 勾選「聯網搜尋」後，程式會自動在模型後加上 :online 以啟用搜尋。
-- Gemini: 勾選後使用 Google Search Grounding。
-`;
-        alert(helpText);
+        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+I: 輸入\nAlt+C: 複製結果");
     }
 
     function copyResult() {
@@ -473,9 +470,11 @@
         }
     }
 
+    // ★★★ 核心修改：焦點控制與 Timeout 處理 ★★★
     async function handleSubmit(e) {
         e.preventDefault();
-        const userInput = document.getElementById('user-input').value.trim();
+        const inputField = document.getElementById('user-input');
+        const userInput = inputField.value.trim(); // 這裡不清除 value，保留文字
         const pKey = document.getElementById('provider-select').value;
         
         if (!userInput && !selectedFile) {
@@ -489,25 +488,57 @@
         if (selectedFile) displayMsg = `[檔案: ${selectedFile.name}] ${displayMsg}`;
         addMessage('user', displayMsg);
 
+        // 讀取逾時設定
+        const timeoutSec = parseInt(document.getElementById('timeout-setting').value) || 120;
+        
+        // 建立 AbortController 用於超時取消請求
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
+
         try {
             let fileData = null;
             if (selectedFile) {
                 fileData = await readFileAsBase64(selectedFile);
             }
 
-            const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null);
+            // 傳入 controller.signal
+            const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
             addMessage('assistant', response);
             
-            document.getElementById('user-input').value = "";
-            selectedFile = null;
-            document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
-            document.getElementById('file-input').value = "";
+            // ★★★ 成功後：清除輸入、轉移焦點 ★★★
+            cleanUpAndFocus();
 
         } catch (err) {
-            addMessage('error', `API 錯誤: ${err.message}`);
+            // 判斷是否為逾時錯誤
+            if (err.name === 'AbortError' || err.message.includes('aborted')) {
+                addMessage('error', `AI 模型沒有回應 (超過 ${timeoutSec} 秒)`);
+            } else {
+                addMessage('error', `錯誤: ${err.message}`);
+            }
+            // ★★★ 失敗後：同樣清除輸入、轉移焦點 ★★★
+            cleanUpAndFocus();
+
         } finally {
+            clearTimeout(timeoutId); // 清除計時器
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
         }
+    }
+
+    function cleanUpAndFocus() {
+        // 1. 清除輸入框
+        document.getElementById('user-input').value = "";
+        
+        // 2. 清除檔案
+        selectedFile = null;
+        document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+        document.getElementById('file-input').value = "";
+
+        // 3. 轉移焦點到結果標題
+        const resultHeading = document.getElementById('result-heading');
+        resultHeading.focus();
+        
+        // 讓螢幕捲動到正確位置
+        resultHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     function readFileAsBase64(file) {
@@ -519,12 +550,11 @@
         });
     }
 
-    async function callAI(provider, text, fileBase64, mimeType) {
+    // ★★★ 修改 callAI 支援 signal ★★★
+    async function callAI(provider, text, fileBase64, mimeType, signal) {
         const apiKey = document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
         const searchEnabled = document.getElementById('enable-search').checked;
-        
-        // 確保使用當下最新的 model ID
         let model = currentActiveModelId;
 
         if (!apiKey) throw new Error("請先輸入 API Key");
@@ -536,79 +566,57 @@
             'Authorization': `Bearer ${apiKey}` 
         };
 
-        // 修正 1: OpenRouter 聯網邏輯
         if (provider === 'openrouter') {
             url = "https://openrouter.ai/api/v1/chat/completions";
-            // 如果勾選聯網，且模型名稱尚未包含 :online，則自動加上
             if (searchEnabled && !model.endsWith(':online')) {
                 model = model + ':online';
                 showStatus(`已啟用聯網模式 (${model})`, 'info');
             }
-            // 修正 OpenRouter header
             headers['HTTP-Referer'] = window.location.href; 
             headers['X-Title'] = 'AI Assistant';
         }
-        else if (provider === 'openai') {
-            url = "https://api.openai.com/v1/chat/completions";
-        }
-        else if (provider === 'groq') {
-            url = "https://api.groq.com/openai/v1/chat/completions";
-        }
-        else if (provider === 'perplexity') {
-            url = "https://api.perplexity.ai/chat/completions";
-        }
+        else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
+        else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
+        else if (provider === 'perplexity') url = "https://api.perplexity.ai/chat/completions";
 
         const finalPrompt = prompt + "\n使用者輸入: " + text;
 
-        // Gemini 專用邏輯
         if (provider === 'gemini') {
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            delete headers['Authorization']; // Gemini 用 URL param
+            delete headers['Authorization'];
             
             let parts = [{ text: finalPrompt }];
             if (fileBase64) {
-                parts.unshift({
-                    inline_data: { mime_type: mimeType, data: fileBase64 }
-                });
+                parts.unshift({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             }
             body = {
                 contents: [{ parts: parts }],
                 tools: searchEnabled ? [{ google_search: {} }] : []
             };
         } 
-        // 其他廠商 (OpenAI 格式: OpenRouter, Groq, Perplexity, OpenAI)
         else {
             let messages = [];
-            
-            // 修正 2: 處理圖片上傳 (Vision)
             if (fileBase64) {
                 messages.push({
                     role: "user",
                     content: [
                         { type: "text", text: finalPrompt },
-                        {
-                            type: "image_url",
-                            image_url: {
-                                url: `data:${mimeType};base64,${fileBase64}`
-                            }
-                        }
+                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
                     ]
                 });
             } else {
                 messages.push({ role: "user", content: finalPrompt });
             }
 
-            body = {
-                model: model,
-                messages: messages
-                // 注意：Perplexity 不支援 image_url，若上傳會報錯，這是 API 限制
-            };
+            body = { model: model, messages: messages };
         }
 
+        // Fetch 請求加入 signal
         const res = await fetch(url, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: signal 
         });
 
         if (!res.ok) {
@@ -618,7 +626,6 @@
 
         const data = await res.json();
         
-        // 解析回應
         if (provider === 'gemini') {
             if (data.candidates && data.candidates[0].content) {
                 return data.candidates[0].content.parts.map(p => p.text).join('');
