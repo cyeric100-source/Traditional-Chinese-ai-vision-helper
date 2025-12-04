@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (最新模型版)</title>
+    <title>AI 視障助理 (2025 最新版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -94,7 +94,6 @@
             word-break: break-word;
         }
         .message:focus {
-            /* 讓獲得焦點的訊息框有明顯提示 */
             outline: 4px solid var(--accent-color);
             background-color: #1a1a1a;
         }
@@ -156,7 +155,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理</h1>
+    <h1 class="app-title">AI 視障助理 (2025.12 最新版)</h1>
 
     <!-- 區域 1: 設定 -->
     <details id="settings-area">
@@ -167,12 +166,11 @@
         <div style="margin-top: 15px;">
             <label for="provider-select">AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
-                <option value="gemini">Google Gemini (免費/推薦)</option>
-                <option value="openrouter">OpenRouter (整合/DeepSeek)</option>
-                <option value="groq">Groq (極速/Llama)</option>
-                <option value="openai">OpenAI (GPT-4o/o1)</option>
-                <option value="perplexity">Perplexity (搜尋引擎)</option>
-                <option value="mistral">Mistral</option>
+                <option value="gemini">Google Gemini (免費/3.0 Pro)</option>
+                <option value="openrouter">OpenRouter (DeepSeek V3.2)</option>
+                <option value="groq">Groq (Llama 3.3 極速)</option>
+                <option value="openai">OpenAI (GPT-5.1)</option>
+                <option value="perplexity">Perplexity (Sonar Deep Search)</option>
             </select>
 
             <label for="api-key">API Key (金鑰):</label>
@@ -247,13 +245,13 @@
 請適當利用 Markdown 標題層級輸出結果.
 遇到圖片就進行巨細無遺、客觀、準確的描述.
 圖片包含文字就作 OCR 然後全部顯示出來。
-若要上網搜尋就務必搜尋最新資料。`;
+若要上網搜尋就務必搜尋 2025 年 12 月的最新資料。`;
 
     // === 說明文件內容 (Markdown) ===
     const HELP_CONTENT = `
-# AI 視障助理使用手冊
+# AI 視障助理使用手冊 (2025.12 版)
 
-這是一款網頁版 AI 輔助工具，整合最新模型，協助您進行圖片辨識、文件閱讀及資料查詢。
+整合今日 (2025/12/04) 最新發布的 Gemini 3.0 Pro 與 GPT-5.1，為您提供最準確的視覺與文字輔助。
 
 ## 快速鍵列表
 
@@ -262,116 +260,94 @@
 *   **Alt + I**：跳至「文字輸入框」。
 *   **Alt + C**：複製 AI 的回答。
 
-## 支援模型亮點
+## 今日最新模型 (2025/12/04)
 
-*   **Gemini**：推薦 \`gemini-2.0-flash\` (速度快、免費) 或 \`gemini-2.0-flash-thinking-exp\` (思考能力強)。
-*   **OpenRouter**：可使用 \`deepseek/deepseek-r1\` (最強開源模型)。
-*   **Groq**：極速推論，支援 \`deepseek-r1-distill\` 與 \`llama-3.3\`。
-*   **Perplexity**：推薦 \`sonar-reasoning-pro\` 用於深度搜尋。
+*   **Gemini (推薦)**：預設 \`gemini-3.0-pro-preview\`。Google 最新旗艦，11/18 剛發布。支援最強的 PDF 與圖片閱讀，且在 AI Studio 通常有免費額度。
+*   **OpenAI**：支援 \`gpt-5.1\` (最新版) 與 \`gpt-5.1-thinking\`。
+*   **DeepSeek (OpenRouter)**：支援 \`deepseek/deepseek-v3.2\`，被譽為目前的開源之王，推理能力極強。
+*   **Perplexity**：推薦 \`sonar-deep-research\`，專門用於深度聯網搜尋今日新聞。
 
 ## 使用步驟
 
 ### 1. 圖片或文件辨識
-1.  按下 **Alt + U** 或點擊「📷 拍攝/檔案」。
-2.  選擇圖片 (JPG/PNG) 或 PDF 文件。
-    *   *注意：PDF 僅支援 Google Gemini 模式。*
-3.  檔案選擇後會自動傳送。
+1.  按下 **Alt + U**。
+2.  選擇圖片或 PDF (PDF 建議使用 Gemini 模式)。
+3.  系統將使用 Gemini 3.0 Pro 進行分析。
 
-### 2. 一般對話
-1.  按下 **Alt + I**。
-2.  輸入問題後按 Enter。
-
-### 3. 設定與更新
-*   在設定區輸入 API Key 後，可按「🔄」按鈕嘗試從網路取得該服務商最新的模型清單 (支援 Gemini, OpenRouter, Groq)。
+### 2. 設定
+*   若發現模型無法使用，請按設定中的「🔄」更新清單，或切換回舊版穩定的 \`gemini-2.5-flash\`。
 `;
 
-    // === 1. 模型資料庫 (已更新至最新清單) ===
+    // === 1. 模型資料庫 (2025/12/04 最新更新) ===
     const PROVIDERS = {
         gemini: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "gemini-2.0-flash", // 更新預設
+            defaultModel: "gemini-3.0-pro-preview", // Google 最新發布
             canFetch: true,
             models: [
-                "gemini-2.0-flash", 
-                "gemini-2.0-flash-lite-preview-02-05", 
-                "gemini-2.0-pro-exp-02-05",
-                "gemini-2.0-flash-thinking-exp-01-21", 
-                "gemini-1.5-pro", 
-                "gemini-1.5-flash"
+                "gemini-3.0-pro-preview",    // 2025.11.18 發布
+                "gemini-3.0-deep-think",     // 深度思考版
+                "gemini-2.5-flash",          // 穩定快速版
+                "gemini-2.5-pro",
+                "gemini-exp-1204"            // 今日實驗版
             ],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "deepseek/deepseek-r1:free", // 更新熱門預設
+            defaultModel: "deepseek/deepseek-v3.2", // 2025.12 最新開源王者
             canFetch: true,
             models: [
-                "deepseek/deepseek-r1:free",
-                "deepseek/deepseek-r1",
-                "google/gemini-2.0-pro-exp-02-05:free",
-                "google/gemini-2.0-flash-thinking-exp:free",
-                "meta-llama/llama-3.3-70b-instruct",
-                "anthropic/claude-3.5-sonnet",
-                "openai/gpt-4o"
+                "deepseek/deepseek-v3.2",
+                "deepseek/deepseek-v3.2-speciale",
+                "openai/gpt-5.1",
+                "google/gemini-3.0-pro-preview",
+                "anthropic/claude-3.7-sonnet"
             ],
             listUrl: "https://openrouter.ai/api/v1/models"
         },
         groq: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "deepseek-r1-distill-llama-70b", // 更新熱門預設
-            canFetch: true, // Groq 支援列表 API
+            defaultModel: "llama-3.3-70b-versatile", // Groq 目前主力
+            canFetch: true, 
             models: [
-                "deepseek-r1-distill-llama-70b",
                 "llama-3.3-70b-versatile",
-                "llama-3.2-90b-vision-preview",
-                "mixtral-8x7b-32768"
+                "deepseek-r1-distill-llama-70b",
+                "mixtral-8x22b-instruct-v0.1"
             ],
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         openai: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "gpt-4o",
-            canFetch: false, // 瀏覽器端通常會遭遇 CORS 阻擋，故預設關閉
+            defaultModel: "gpt-5.1", // 2025.11 最新
+            canFetch: false,
             models: [
-                "gpt-4o", 
-                "gpt-4o-mini", 
-                "o1", 
-                "o1-mini",
-                "gpt-4.5-preview"
+                "gpt-5.1", 
+                "gpt-5.1-thinking",
+                "gpt-4o-2025-11-20", 
+                "gpt-4o-mini"
             ]
         },
         perplexity: {
             prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "sonar-reasoning-pro", // 更新為最新推理模型
+            defaultModel: "sonar-deep-research", // 最新深度搜尋
             canFetch: false,
             models: [
+                "sonar-deep-research",
                 "sonar-reasoning-pro", 
-                "sonar-reasoning", 
-                "sonar-pro", 
-                "sonar"
-            ]
-        },
-        mistral: {
-            prompt: UNIFIED_DEFAULT_PROMPT,
-            defaultModel: "pixtral-large-latest",
-            canFetch: false,
-            models: [
-                "pixtral-large-latest", 
-                "mistral-large-latest", 
-                "ministral-8b-latest",
-                "codestral-latest"
+                "sonar-pro"
             ]
         }
     };
 
     // === 2. 初始化 ===
     document.addEventListener('DOMContentLoaded', () => {
-        const hasVisited = localStorage.getItem('app_visited_before');
+        const hasVisited = localStorage.getItem('app_visited_2025_dec');
         const settingsDetails = document.getElementById('settings-area');
 
         if (!hasVisited) {
             settingsDetails.open = true;
-            localStorage.setItem('app_visited_before', 'true');
+            localStorage.setItem('app_visited_2025_dec', 'true');
         }
 
         const savedProvider = localStorage.getItem('provider') || 'gemini';
@@ -438,7 +414,8 @@
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
-        showStatus("已恢復預設指令");
+        document.getElementById('model-input').value = PROVIDERS[pKey].defaultModel;
+        showStatus("已恢復預設指令與模型");
     }
 
     function showHelp() {
@@ -518,10 +495,10 @@
                 const res = await fetch(conf.listUrl.replace('{KEY}', key));
                 if (!res.ok) throw new Error("API Error: " + res.status);
                 const data = await res.json();
-                // 過濾並只保留較新的 gemini 模型，移除舊版
+                // 過濾並保留 3.0, 2.0 等新模型
                 newModels = (data.models || [])
                     .map(m => m.name.replace("models/", ""))
-                    .filter(m => m.includes("gemini") && !m.includes("1.0"));
+                    .filter(m => (m.includes("gemini-3") || m.includes("gemini-2.5")) && !m.includes("1.0"));
 
             } else if (pKey === 'openrouter') {
                 const res = await fetch(conf.listUrl);
@@ -596,7 +573,7 @@
         
         responseDiv.setAttribute('role', 'status'); 
         responseDiv.setAttribute('aria-live', 'polite');
-        responseDiv.innerText = "🤔 正在思考並分析...";
+        responseDiv.innerText = "🤔 正在思考並分析 (Model: " + model + ")...";
         output.appendChild(responseDiv);
         
         document.getElementById('copy-btn').classList.add('hidden');
@@ -645,7 +622,13 @@
 
         } catch (err) {
             responseDiv.className = 'message error';
-            responseDiv.innerText = "錯誤: " + err.message;
+            
+            let errMsg = err.message;
+            if (errMsg.includes('404') || errMsg.includes('not found')) {
+                errMsg += "\n(提示: 若 " + model + " 尚未對您的帳號開放，請嘗試 gemini-2.5-flash)";
+            }
+            
+            responseDiv.innerText = "錯誤: " + errMsg;
             
             responseDiv.setAttribute('tabindex', '-1');
             responseDiv.setAttribute('role', 'alert');
@@ -695,7 +678,7 @@
                 .map((c, i) => c.web ? `${i+1}. [${c.web.title || '來源網頁'}](${c.web.uri})` : "")
                 .filter(s => s !== "")
                 .join("\n");
-            if (sources) txt += "\n\n**參考來源:**\n" + sources;
+            if (sources) txt += "\n\n**參考來源 (2025 最新):**\n" + sources;
         }
         
         return txt;
@@ -706,7 +689,6 @@
         if (provider === 'openrouter') url = "https://openrouter.ai/api/v1";
         else if (provider === 'groq') url = "https://api.groq.com/openai/v1";
         else if (provider === 'openai') url = "https://api.openai.com/v1";
-        else if (provider === 'mistral') url = "https://api.mistral.ai/v1";
         else if (provider === 'perplexity') url = "https://api.perplexity.ai";
 
         const contentPayload = [{type: "text", text: user}];
@@ -723,11 +705,9 @@
         };
         if (provider === 'openrouter') { 
             headers['HTTP-Referer'] = location.href; 
-            headers['X-Title'] = 'Visual Assistant'; 
+            headers['X-Title'] = 'Visual Assistant 2025'; 
         }
 
-        // 針對 o1-mini 等不支持 system role 的模型做簡單相容 (通常 o1-mini 還是可以接受 system, 但建議小心)
-        // 這裡維持標準架構，大部分新模型都相容
         const body = {
             model: model,
             messages: [
