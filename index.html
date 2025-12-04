@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (H1 標題焦點優化版)</title>
+    <title>AI 視障助理 (單次問答焦點版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -132,7 +132,7 @@
 <div id="status-toast" role="status" aria-live="polite"></div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (H1 標題焦點版)</h1>
+    <h1 class="app-title">AI 視障助理 (單次問答版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -178,8 +178,9 @@
         </div>
     </details>
 
-    <!-- 結果區 (移除舊標題，改為動態插入) -->
+    <!-- 結果區 -->
     <main role="main">
+        <!-- 這裡會動態插入內容 -->
         <div id="chat-output" class="message-area"></div>
         <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="width:100%; margin-bottom: 20px;">
             📋 複製 (Alt+C)
@@ -263,9 +264,9 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const settingsDetails = document.getElementById('settings-area');
-        if (!localStorage.getItem('visited_2025_h1_focus')) {
+        if (!localStorage.getItem('visited_2025_single_turn')) {
             settingsDetails.open = true;
-            localStorage.setItem('visited_2025_h1_focus', 'true');
+            localStorage.setItem('visited_2025_single_turn', 'true');
         }
         const savedProvider = localStorage.getItem('provider') || 'gemini';
         document.getElementById('provider-select').value = savedProvider;
@@ -276,21 +277,30 @@
         handleProviderChange(false);
     });
 
+    // 顯示/隱藏狀態訊息 (Toast)
     function showStatus(msg, type = 'success') {
         const toast = document.getElementById('status-toast');
+        if (!msg) {
+            toast.className = ''; // 隱藏
+            return;
+        }
         toast.innerText = msg;
         toast.className = 'show';
         if (type === 'error') toast.style.backgroundColor = '#ff4444';
         else toast.style.backgroundColor = 'rgba(255, 255, 0, 0.95)';
-        setTimeout(() => toast.className = '', 3000);
+        
+        // 注意：這裡不設自動隱藏，由流程控制何時隱藏
+        if (type === 'success') {
+             setTimeout(() => toast.className = '', 3000);
+        }
     }
 
-    // ★★★ 核心修改：addMessage 支援 H1 標題與回傳元素 ★★★
+    // 增加訊息到畫面
     function addMessage(role, content) {
         const div = document.createElement('div');
         div.className = `message ${role}`;
         
-        // 讓容器可聚焦，以便讀屏軟體能從這裡開始朗讀
+        // 讓容器可聚焦
         div.tabIndex = -1; 
 
         const header = document.createElement('h1');
@@ -318,10 +328,7 @@
         const output = document.getElementById('chat-output');
         output.appendChild(div);
         
-        // 只是添加訊息時捲動到底部，不搶焦點（焦點在 handleSubmit 控制）
-        window.scrollTo(0, document.body.scrollHeight);
-        
-        return div; // 回傳 DOM 元素供後續聚焦使用
+        return div; 
     }
 
     function handleProviderChange(save = true) {
@@ -507,27 +514,24 @@
         }
     }
 
-    // ★★★ 核心修改：焦點控制與 Timeout 處理 ★★★
+    // ★★★ 核心修改：狀態顯示、等待、清除、焦點 ★★★
     async function handleSubmit(e) {
         e.preventDefault();
         const inputField = document.getElementById('user-input');
-        const userInput = inputField.value.trim(); // 保留文字，不立即清除
+        const userInput = inputField.value.trim(); 
         const pKey = document.getElementById('provider-select').value;
         
         if (!userInput && !selectedFile) {
             showStatus("請輸入內容", 'error'); return;
         }
 
+        // 1. 顯示「請稍後，正在處理」，並保持輸入框文字與舊結果
+        showStatus("請稍後，正在處理...", "info");
+        
         const submitBtn = document.getElementById('submit-btn');
         submitBtn.disabled = true; submitBtn.innerText = "發送中";
 
-        let displayMsg = userInput;
-        if (selectedFile) displayMsg = `[檔案: ${selectedFile.name}] ${displayMsg}`;
-        addMessage('user', displayMsg);
-
-        // 讀取逾時設定
         const timeoutSec = parseInt(document.getElementById('timeout-setting').value) || 120;
-        
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
@@ -539,47 +543,61 @@
 
             const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
             
-            // 加入 AI 回應，並取得 DOM 元素
+            // 2. 成功後：一次清除所有舊資料 (輸入、舊結果、狀態)
+            clearOldData();
+            
+            // 3. 顯示新資料 (先加問題，再加回答)
+            let displayMsg = userInput;
+            if (selectedFile) displayMsg = `[檔案: ${selectedFile.name}] ${displayMsg}`;
+            addMessage('user', displayMsg);
+            
             const aiMsgDiv = addMessage('assistant', response);
             
-            // ★★★ 成功後：清除輸入、並聚焦到 AI 回應容器 ★★★
-            cleanUpAndFocus(aiMsgDiv);
+            // 4. 聚焦到新回答
+            focusTarget(aiMsgDiv);
 
         } catch (err) {
+            // 失敗後：同樣清除舊資料
+            clearOldData();
+            
+            // 顯示輸入(方便對照)與錯誤
+            addMessage('user', userInput);
+
             let errMsg = "";
             if (err.name === 'AbortError' || err.message.includes('aborted')) {
                 errMsg = `AI 模型沒有回應 (超過 ${timeoutSec} 秒)`;
             } else {
                 errMsg = `錯誤: ${err.message}`;
             }
-            // 加入錯誤訊息，並取得 DOM 元素
             const errorDiv = addMessage('error', errMsg);
             
-            // ★★★ 失敗後：同樣清除輸入、聚焦錯誤訊息 ★★★
-            cleanUpAndFocus(errorDiv);
+            // 聚焦到錯誤訊息
+            focusTarget(errorDiv);
 
         } finally {
             clearTimeout(timeoutId);
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
+            selectedFile = null; // 清除檔案狀態
         }
     }
 
-    function cleanUpAndFocus(targetElement) {
-        // 1. 清除輸入框
-        document.getElementById('user-input').value = "";
-        
-        // 2. 清除檔案
-        selectedFile = null;
+    // 清除舊資料的函數
+    function clearOldData() {
+        document.getElementById('chat-output').innerHTML = ""; // 清空舊對話
+        document.getElementById('user-input').value = "";      // 清空輸入框
         document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
         document.getElementById('file-input').value = "";
+        
+        // 隱藏「請稍後...」的 Toast
+        showStatus(""); 
+    }
 
-        // 3. 轉移焦點到目標元素 (AI 回應區塊)
-        if (targetElement) {
-            // 確保元素在視野內
-            targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            // 延遲一點點確保 DOM 渲染完畢後聚焦
+    // 聚焦函數
+    function focusTarget(element) {
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
             setTimeout(() => {
-                targetElement.focus();
+                element.focus();
             }, 100);
         }
     }
@@ -612,7 +630,7 @@
             url = "https://openrouter.ai/api/v1/chat/completions";
             if (searchEnabled && !model.endsWith(':online')) {
                 model = model + ':online';
-                showStatus(`已啟用聯網模式 (${model})`, 'info');
+                // 修正：這裡不再顯示「已啟用聯網」的提示
             }
             headers['HTTP-Referer'] = window.location.href; 
             headers['X-Title'] = 'AI Assistant';
