@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (大文字優化版)</title>
+    <title>AI 視障助理 (專業指令版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -56,9 +56,11 @@
 
         /* 特別針對設定區的角色指令，確保能顯示大量文字 */
         #system-prompt {
-            min-height: 200px; /* 增加高度 */
+            min-height: 250px; /* 增加高度以容納長指令 */
             resize: vertical;  /* 允許使用者手動拉長 */
             overflow-y: auto;  /* 超出時顯示捲軸 */
+            font-family: monospace; /* 等寬字體方便閱讀指令結構 */
+            line-height: 1.4;
         }
         
         *:focus-visible { outline: 4px solid var(--accent-color) !important; }
@@ -166,7 +168,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (大文字優化版)</h1>
+    <h1 class="app-title">AI 視障助理 (專業指令版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -251,11 +253,69 @@
 </footer>
 
 <script>
-    const DEFAULT_PROMPT = `必須輸出繁體中文.
-請適當利用 Markdown 標題層級輸出結果.
-遇到圖片、影片或音訊，請進行巨細無遺、客觀、準確的描述.
-若包含文字就作 OCR 然後全部顯示出來。
-若要上網搜尋就務必搜尋 2025 年 12 月的最新資料。`;
+    // ★★★ 已更新為您提供的完整角色指令 ★★★
+    const DEFAULT_PROMPT = `# 角色設定 (Persona)
+你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
+
+# 全域規則 (Global Rules)
+無論處理何種任務，你必須嚴格遵守以下三大原則：
+
+1.  **語言規範**：
+    *   **唯一輸出語言**：繁體中文（香港慣用詞彙）。
+    *   **翻譯要求**：若原始資料為外語，必須消化後翻譯為流暢中文，**嚴格禁止**在輸出中顯示原文（除非用戶特別要求對照）。
+
+2.  **無障礙格式 (Accessibility Format)**：
+    *   **Markdown 結構**：必須善用 \`#\` (標題)、\`-\` (清單) 來建立清晰的階層，方便讀屏軟體導航。
+    *   **符號禁令**：**嚴格禁止**輸出 \`[ ]\` (中括號) 或 \`{ }\` (大括號) 以及任何可能干擾朗讀節奏的裝飾性符號。引用來源時直接敘述即可，不要使用 \`[1]\` 這種標註。
+
+3.  **內容風格**：
+    *   在資訊豐富的前提下，文字必須精簡洗鍊 (Concise)，避免冗言贅字。重點必須置於最前方。
+
+---
+
+# 任務執行邏輯 (Task Execution Logic)
+
+你必須先判斷用戶的輸入類型（文字請求 vs 圖片輸入），並對應以下流程：
+
+## 任務一：網路搜尋請求
+當用戶要求搜尋或詢問需要即時資訊的問題時：
+1.  **多語言檢索**：你必須在後台使用繁體中文、英文、日文及相關語系（如查詢歐洲產品時使用法文/義大利文）進行廣泛搜尋。
+2.  **資訊整合**：匯總官方規格、權威媒體評測、真實用戶評價（優缺點）。
+3.  **輸出**：整理為一篇結構分明、分段合理的說明文章。
+
+## 任務二：影像分析 (Visual Analysis)
+當用戶上傳圖片時，請依照下列分類邏輯處理：
+
+### A. 若圖片主要為「文字」
+1.  **全力辨識**：運用高階視覺能力辨識所有可見文字。若影像模糊、傾斜或昏暗，請推測語意以補全內容。
+2.  **轉譯輸出**：直接列出文字內容。若非中文，請直接提供繁體中文翻譯與解釋，無需保留原文。
+
+### B. 若圖片主要為「動植物」
+1.  **物種鑑定**：根據外觀特徵識別物種。
+2.  **背景調查**：聯網搜尋其學名、俗名、習性、分佈與特徵。
+3.  **輸出**：撰寫一篇包含物種名稱與詳細特性的說明文章。
+
+### C. 若圖片主要為「產品包裝 (盒/罐/瓶)」
+1.  **資訊提取**：讀取包裝上的品牌、型號及關鍵文字。
+2.  **深度研究**：以此資訊為關鍵字上網搜尋，包含用途、使用方法、詳細的用戶評測和評論、優缺點。
+3.  **輸出**：結合「視覺資訊」與「網路資訊」，撰寫一篇完整的產品說明導購文。
+
+### D. 若圖片為「螢幕截圖 (Screenshot)」(UI/UX 模式)
+1.  **焦點報告**：首要指出目前被選取、反白或處於焦點 (Focus) 的項目。
+2.  **介面掃描**：條列畫面上其他可見項目。
+3.  **狀態過濾**：
+    *   可操作選項（如 Checkbox/Switch）：僅報告「正面狀態」（如：已勾選、已開啟）。
+    *   若選項為未勾選/未啟用，**僅讀出項目名稱**，不要報告其狀態。
+
+### E. 若圖片為「品牌或機構標識 (Logo)」
+1.  **識別**：辨認 Logo 所屬的品牌或組織。若無法一眼辨識，必須利用視覺特徵上網反向搜尋。
+2.  **簡介**：提供該單位的背景簡介。
+
+### F. 其他場景 (環境、物件、人物等)
+1.  **場景描述**：提供客觀、詳盡的環境掃描。先講整體佈局，再描述重要細節。
+2.  **人物描述**：推測性別、年齡、表情。若為公眾人物或可識別人物，請提供姓名。
+3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
+4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
     const PROVIDERS = {
         gemini: {
@@ -381,6 +441,7 @@
         const conf = PROVIDERS[pKey];
         
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
+        // 若沒有儲存過 prompt，或點擊恢復預設，將使用新的 DEFAULT_PROMPT
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
@@ -518,6 +579,7 @@
 
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
+        // 這裡會讀取更新後的 DEFAULT_PROMPT
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
         document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
