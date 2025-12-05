@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (統一指令終極版)</title>
+    <title>AI 視障助理 (修正版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -168,7 +168,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (統一指令終極版)</h1>
+    <h1 class="app-title">AI 視障助理 (修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -253,7 +253,7 @@
 </footer>
 
 <script>
-    // ★★★ 核心修正：將所有模型的預設指令統一為這個變數 ★★★
+    // ★★★ 全域統一的預設指令 ★★★
     const DEFAULT_PROMPT = `# 角色設定 (Persona)
 你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
 
@@ -317,9 +317,10 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    // 設定變數，用來確保瀏覽器已強制更新過 Prompt
-    const PROMPT_VERSION_KEY = "prompt_version_2025_new";
+    // 強制更新 Key
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed";
 
+    // ★★★ 修正1: Groq 使用支援 Vision 的模型 ★★★
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
@@ -343,9 +344,9 @@
         },
         groq: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "llama-3.3-70b-versatile",
+            defaultModel: "llama-3.2-90b-vision-preview", // 改為 Vision 模型
             canFetch: true, 
-            models: ["llama-3.3-70b-versatile"],
+            models: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile"], // Vision 優先
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         perplexity: {
@@ -361,16 +362,11 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         // ★★★ 強制清除舊指令邏輯 ★★★
-        // 檢查是否執行過本次更新，如果沒有，清除所有舊的 prompt 設定
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
             ['gemini', 'openrouter', 'openai', 'groq', 'perplexity'].forEach(p => {
                 localStorage.removeItem(`${p}_prompt`);
             });
-            // 標記已更新
             localStorage.setItem(PROMPT_VERSION_KEY, 'true');
-            // 如果用戶沒有設定過 Provider，預設展開設定區；如果有，則維持原樣
-            // 但因為清除了 prompt，我們需要讓使用者知道，所以可以選擇展開
-            // 這裡邏輯維持：有 provider 就折疊，沒有就展開
         }
 
         const savedProvider = localStorage.getItem('provider');
@@ -456,9 +452,7 @@
         const conf = PROVIDERS[pKey];
         
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
-        
-        // ★★★ 關鍵修正：這裡會優先讀取 localStorage (使用者修改版)，若無則讀取 conf.prompt (預設版)
-        // 因為上面 DOMContentLoaded 已經清除過一次舊版，所以現在預設一定是最新的 DEFAULT_PROMPT
+        // 讀取 Prompt：優先讀使用者儲存的，若無則讀 conf.prompt (即 DEFAULT_PROMPT)
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
@@ -588,7 +582,7 @@
         localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
         localStorage.setItem(`${pKey}_model`, currentActiveModelId);
         
-        // ★★★ 儲存用戶的 Prompt ★★★
+        // 儲存用戶的 Prompt
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
         
@@ -598,16 +592,14 @@
 
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
-        // ★★★ 恢復預設時，強制從 PROVIDERS 讀取最新的 DEFAULT_PROMPT
-        const defaultP = PROVIDERS[pKey].prompt;
-        document.getElementById('system-prompt').value = defaultP;
-        
-        // 清除 localStorage 中的自訂 prompt，讓下次載入時使用預設值
-        localStorage.removeItem(`${pKey}_prompt`);
-        
+        // 恢復時讀取 PROVIDERS 裡的預設指令
+        document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
         document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
         
+        // 清除自訂 prompt
+        localStorage.removeItem(`${pKey}_prompt`);
+
         handleProviderChange(true);
         showTransientStatus("已恢復預設");
     }
@@ -752,19 +744,19 @@
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             delete headers['Authorization'];
             
-            let parts = [{ text: finalPrompt }];
+            let parts = [{ text: text }]; // 使用純文字
             if (fileBase64) {
                 parts.unshift({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             }
             body = {
+                // ★★★ 修正2: 使用 system_instruction ★★★
+                system_instruction: { parts: [{ text: prompt }] },
                 contents: [{ parts: parts }],
                 tools: searchEnabled ? [{ google_search: {} }] : []
             };
         } 
         else {
             let messages = [];
-            
-            // ★★★ 確保使用目前的 prompt 作為 System Role ★★★
             messages.push({ role: "system", content: prompt });
 
             if (fileBase64) {
