@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (單次問答焦點版)</title>
+    <title>AI 視障助理 (智能啟動版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -11,13 +11,14 @@
         :root {
             --bg-color: #000000;
             --text-color: #FFFFFF;
-            --accent-color: #FFFF00;     /* 黃色高亮 */
+            --accent-color: #FFFF00;      /* 黃色高亮 */
             --user-header-color: #0088ff; /* 用戶標題色 */
             --ai-header-color: #FFFF00;   /* AI 標題色 */
             --border-color: #555;
             --input-bg: #1A1A1A;
             --button-bg: #FFFF00;
             --button-text: #000000;
+            --status-bg: #222;            /* 狀態列背景 */
         }
 
         body {
@@ -26,6 +27,7 @@
             color: var(--text-color);
             margin: 0; padding: 0;
             font-size: 1.2rem; line-height: 1.6;
+            padding-top: 60px; /* 預留頂部狀態列空間 */
         }
 
         .container {
@@ -107,13 +109,19 @@
         }
         .check-btn input { width: 20px; height: 20px; margin: 0 8px 0 0; }
 
-        #status-toast {
-            position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(255, 255, 0, 0.95); color: #000;
-            padding: 20px 40px; border-radius: 10px; font-weight: bold; font-size: 1.5rem;
-            z-index: 2000; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+        /* 狀態列 (原本的 Toast 改為頂部固定欄) */
+        #status-bar {
+            position: fixed; top: 0; left: 0; right: 0;
+            background: var(--status-bg); color: #fff;
+            padding: 10px; text-align: center;
+            font-weight: bold; font-size: 1.1rem;
+            z-index: 2000; border-bottom: 2px solid var(--border-color);
+            transition: background-color 0.3s;
         }
-        #status-toast.show { opacity: 1; }
+        /* 狀態顏色變化 */
+        #status-bar.ready { background: #004400; border-bottom-color: #00ff00; }
+        #status-bar.busy { background: #664400; border-bottom-color: #ffff00; }
+        #status-bar.error { background: #660000; border-bottom-color: #ff0000; }
 
         .hidden { display: none !important; }
         .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -129,10 +137,11 @@
 </head>
 <body>
 
-<div id="status-toast" role="status" aria-live="polite"></div>
+<!-- 頂部狀態列 -->
+<div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (單次問答版)</h1>
+    <h1 class="app-title">AI 視障助理 (智能啟動版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -263,44 +272,66 @@
     let selectedFile = null;
 
     document.addEventListener('DOMContentLoaded', () => {
+        // ★★★ 新的啟動邏輯 ★★★
+        const savedProvider = localStorage.getItem('provider');
         const settingsDetails = document.getElementById('settings-area');
-        if (!localStorage.getItem('visited_2025_single_turn')) {
-            settingsDetails.open = true;
-            localStorage.setItem('visited_2025_single_turn', 'true');
-        }
-        const savedProvider = localStorage.getItem('provider') || 'gemini';
-        document.getElementById('provider-select').value = savedProvider;
         
+        // 載入 Timeout 設定
         const savedTimeout = localStorage.getItem('timeout_setting');
         if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
 
-        handleProviderChange(false);
+        // 如果曾經儲存過 Provider，則載入並折疊；否則展開設定區
+        if (savedProvider) {
+            document.getElementById('provider-select').value = savedProvider;
+            settingsDetails.open = false; // 折疊
+        } else {
+            document.getElementById('provider-select').value = 'gemini'; // 預設
+            settingsDetails.open = true; // 展開
+        }
+        
+        handleProviderChange(false); // 觸發載入 Key、Model 與更新狀態列
     });
 
-    // 顯示/隱藏狀態訊息 (Toast)
-    function showStatus(msg, type = 'success') {
-        const toast = document.getElementById('status-toast');
-        if (!msg) {
-            toast.className = ''; // 隱藏
-            return;
-        }
-        toast.innerText = msg;
-        toast.className = 'show';
-        if (type === 'error') toast.style.backgroundColor = '#ff4444';
-        else toast.style.backgroundColor = 'rgba(255, 255, 0, 0.95)';
+    // ★★★ 統一狀態列更新函數 ★★★
+    function updateStatusBar(text, state = 'ready') {
+        const bar = document.getElementById('status-bar');
+        bar.innerText = text;
         
-        // 注意：這裡不設自動隱藏，由流程控制何時隱藏
-        if (type === 'success') {
-             setTimeout(() => toast.className = '', 3000);
+        // 更新樣式
+        bar.className = '';
+        if (state === 'ready') bar.classList.add('ready');
+        else if (state === 'busy') bar.classList.add('busy');
+        else if (state === 'error') bar.classList.add('error');
+    }
+
+    // 顯示「準備就緒」狀態 (包含 Provider 和 Model)
+    function showReadyStatus() {
+        const pKey = document.getElementById('provider-select').value;
+        const pName = pKey.charAt(0).toUpperCase() + pKey.slice(1); // 字首大寫
+        const model = currentActiveModelId || "Unknown";
+        
+        updateStatusBar(`準備就緒: ${pName} (${model})`, 'ready');
+    }
+
+    // 為了相容舊程式碼的錯誤提示功能 (Toast 邏輯)
+    function showTransientStatus(msg, type = 'success') {
+        // 這裡我們暫時借用狀態列顯示錯誤或成功訊息，然後跳回 Ready
+        updateStatusBar(msg, type === 'error' ? 'error' : 'ready');
+        
+        if (type === 'success' || type === 'error') {
+            // 3秒後如果沒有在忙碌，就變回 Ready
+            setTimeout(() => {
+                const bar = document.getElementById('status-bar');
+                if (!bar.classList.contains('busy')) {
+                    showReadyStatus();
+                }
+            }, 3000);
         }
     }
 
-    // 增加訊息到畫面
     function addMessage(role, content) {
         const div = document.createElement('div');
         div.className = `message ${role}`;
-        
-        // 讓容器可聚焦
         div.tabIndex = -1; 
 
         const header = document.createElement('h1');
@@ -317,7 +348,6 @@
             contentDiv.innerHTML = marked.parse(content);
             document.getElementById('copy-btn').classList.remove('hidden');
         } else {
-            // Error or Info
             header.innerText = (role === 'error') ? '發生錯誤：' : '系統訊息：';
             contentDiv.innerText = content;
         }
@@ -350,7 +380,11 @@
         if (pKey === 'perplexity') searchCheck.checked = true;
 
         document.getElementById('refresh-btn').style.display = conf.canFetch ? 'block' : 'none';
+        
         if (save) localStorage.setItem('provider', pKey);
+        
+        // 更新狀態列
+        showReadyStatus();
     }
 
     function updateModelSelect(models, targetModel) {
@@ -387,19 +421,17 @@
         const apiKey = document.getElementById('api-key').value;
         const conf = PROVIDERS[pKey];
 
-        if (!conf.canFetch) {
-            showStatus("此服務商不支援自動更新", "info"); return;
-        }
+        if (!conf.canFetch) return;
         
         if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
-            showStatus("請先輸入 API Key 才能取得清單", "error");
+            showTransientStatus("請先輸入 API Key", "error");
             document.getElementById('api-key').focus();
             return;
         }
 
         const btn = document.getElementById('refresh-btn');
         const originalText = btn.innerText;
-        btn.innerText = "⏳ 載入中...";
+        btn.innerText = "⏳...";
         btn.disabled = true;
 
         try {
@@ -408,48 +440,33 @@
             if (pKey === 'openrouter') {
                 const res = await fetch("https://openrouter.ai/api/v1/models");
                 const data = await res.json();
-                if (data.data && Array.isArray(data.data)) {
-                    newModels = data.data
-                        .sort((a, b) => (b.created || 0) - (a.created || 0))
-                        .map(m => m.id);
-                }
+                if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             } 
             else if (pKey === 'groq') {
-                const res = await fetch(conf.listUrl, {
-                    headers: { 'Authorization': `Bearer ${apiKey}` }
-                });
+                const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
                 const data = await res.json();
-                if (data.data && Array.isArray(data.data)) {
-                    newModels = data.data
-                        .sort((a, b) => (b.created || 0) - (a.created || 0))
-                        .map(m => m.id);
-                }
+                if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             }
             else if (pKey === 'gemini') {
                 const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
                 const data = await res.json();
-                if (data.models && Array.isArray(data.models)) {
-                    newModels = data.models
-                        .map(m => m.name.replace("models/", ""))
-                        .filter(m => m.includes("gemini") && !m.includes("1.0"));
-                    newModels = Array.from(new Set([...conf.models, ...newModels]));
-                }
+                if (data.models) newModels = data.models.map(m => m.name.replace("models/", "")).filter(m => m.includes("gemini") && !m.includes("1.0"));
+                newModels = Array.from(new Set([...conf.models, ...newModels]));
             }
 
             if (newModels.length > 0) {
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
-                showStatus(`更新成功：共 ${newModels.length} 個模型`);
+                showTransientStatus(`更新成功`);
             } else {
-                showStatus("未找到可用模型", "error");
+                showTransientStatus("未找到模型", "error");
             }
-
         } catch (e) {
-            console.error(e);
-            showStatus(`更新失敗: ${e.message}`, "error");
+            showTransientStatus(`更新失敗`, "error");
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
+            showReadyStatus(); // 更新狀態列顯示新模型
         }
     }
 
@@ -462,10 +479,12 @@
             document.getElementById('custom-model-wrapper').classList.add('hidden');
             currentActiveModelId = select.value;
         }
+        showReadyStatus(); // 更新狀態列
     }
 
     function handleCustomInputChange() {
         currentActiveModelId = document.getElementById('custom-model-input').value.trim();
+        showReadyStatus();
     }
 
     function saveSettings() {
@@ -480,7 +499,8 @@
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
         
-        showStatus("設定已儲存"); document.getElementById('settings-area').open = false;
+        showTransientStatus("設定已儲存"); 
+        document.getElementById('settings-area').open = false;
     }
 
     function restoreDefaults() {
@@ -489,7 +509,7 @@
         document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
         handleProviderChange(true);
-        showStatus("已恢復預設");
+        showTransientStatus("已恢復預設");
     }
 
     function showHelp() {
@@ -499,7 +519,7 @@
     function copyResult() {
         const output = document.getElementById('chat-output');
         const text = output.innerText;
-        navigator.clipboard.writeText(text).then(() => showStatus("已複製全部內容"));
+        navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部內容"));
     }
 
     function handleFileSelect() {
@@ -507,14 +527,14 @@
         if (fileInput.files.length > 0) {
             selectedFile = fileInput.files[0];
             document.getElementById('upload-btn').innerText = `✅ ${selectedFile.name}`;
-            showStatus(`已選擇: ${selectedFile.name}`);
+            showTransientStatus(`已選擇: ${selectedFile.name}`);
             if (!document.getElementById('pause-send').checked) {
                 setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
             }
         }
     }
 
-    // ★★★ 核心修改：狀態顯示、等待、清除、焦點 ★★★
+    // ★★★ 發送邏輯 ★★★
     async function handleSubmit(e) {
         e.preventDefault();
         const inputField = document.getElementById('user-input');
@@ -522,11 +542,11 @@
         const pKey = document.getElementById('provider-select').value;
         
         if (!userInput && !selectedFile) {
-            showStatus("請輸入內容", 'error'); return;
+            showTransientStatus("請輸入內容", 'error'); return;
         }
 
-        // 1. 顯示「請稍後，正在處理」，並保持輸入框文字與舊結果
-        showStatus("請稍後，正在處理...", "info");
+        // 1. 狀態列顯示處理中
+        updateStatusBar("請稍後，正在處理...", 'busy');
         
         const submitBtn = document.getElementById('submit-btn');
         submitBtn.disabled = true; submitBtn.innerText = "發送中";
@@ -543,24 +563,22 @@
 
             const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
             
-            // 2. 成功後：一次清除所有舊資料 (輸入、舊結果、狀態)
+            // 2. 成功：清除資料、顯示結果
             clearOldData();
             
-            // 3. 顯示新資料 (先加問題，再加回答)
             let displayMsg = userInput;
             if (selectedFile) displayMsg = `[檔案: ${selectedFile.name}] ${displayMsg}`;
             addMessage('user', displayMsg);
             
             const aiMsgDiv = addMessage('assistant', response);
             
-            // 4. 聚焦到新回答
+            // 3. 聚焦並恢復狀態
             focusTarget(aiMsgDiv);
+            showReadyStatus();
 
         } catch (err) {
-            // 失敗後：同樣清除舊資料
+            // 失敗：清除資料、顯示錯誤
             clearOldData();
-            
-            // 顯示輸入(方便對照)與錯誤
             addMessage('user', userInput);
 
             let errMsg = "";
@@ -571,28 +589,23 @@
             }
             const errorDiv = addMessage('error', errMsg);
             
-            // 聚焦到錯誤訊息
             focusTarget(errorDiv);
+            showReadyStatus(); // 錯誤後也恢復 Ready 狀態，或可維持 Error 狀態，這裡恢復 Ready 比較合理
 
         } finally {
             clearTimeout(timeoutId);
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
-            selectedFile = null; // 清除檔案狀態
+            selectedFile = null; 
         }
     }
 
-    // 清除舊資料的函數
     function clearOldData() {
-        document.getElementById('chat-output').innerHTML = ""; // 清空舊對話
-        document.getElementById('user-input').value = "";      // 清空輸入框
+        document.getElementById('chat-output').innerHTML = ""; 
+        document.getElementById('user-input').value = "";      
         document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
         document.getElementById('file-input').value = "";
-        
-        // 隱藏「請稍後...」的 Toast
-        showStatus(""); 
     }
 
-    // 聚焦函數
     function focusTarget(element) {
         if (element) {
             element.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -630,7 +643,6 @@
             url = "https://openrouter.ai/api/v1/chat/completions";
             if (searchEnabled && !model.endsWith(':online')) {
                 model = model + ':online';
-                // 修正：這裡不再顯示「已啟用聯網」的提示
             }
             headers['HTTP-Referer'] = window.location.href; 
             headers['X-Title'] = 'AI Assistant';
