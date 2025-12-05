@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (修正版)</title>
+    <title>AI 視障助理 (Mistral AI 整合版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -168,7 +168,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (修正版)</h1>
+    <h1 class="app-title">AI 視障助理 (Mistral AI 整合版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -180,6 +180,7 @@
             <label for="provider-select">AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (推薦)</option>
+                <option value="mistral">Mistral AI (歐洲頂尖)</option>
                 <option value="openrouter">OpenRouter (多模型+聯網)</option>
                 <option value="openai">OpenAI (GPT)</option>
                 <option value="groq">Groq (Llama)</option>
@@ -318,9 +319,8 @@
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
     // 強制更新 Key
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_mistral";
 
-    // ★★★ 修正1: Groq 使用支援 Vision 的模型 ★★★
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
@@ -328,6 +328,13 @@
             canFetch: true,
             models: ["gemini-exp-1204", "gemini-1.5-pro", "gemini-1.5-flash"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
+        },
+        mistral: {
+            prompt: DEFAULT_PROMPT,
+            defaultModel: "mistral-large-latest",
+            canFetch: true,
+            models: ["mistral-large-latest", "pixtral-large-latest", "ministral-8b-latest", "mistral-small-latest"],
+            listUrl: "https://api.mistral.ai/v1/models"
         },
         openrouter: {
             prompt: DEFAULT_PROMPT,
@@ -344,9 +351,9 @@
         },
         groq: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "llama-3.2-90b-vision-preview", // 改為 Vision 模型
+            defaultModel: "llama-3.2-90b-vision-preview", 
             canFetch: true, 
-            models: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile"], // Vision 優先
+            models: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile"], 
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         perplexity: {
@@ -361,9 +368,9 @@
     let selectedFile = null;
 
     document.addEventListener('DOMContentLoaded', () => {
-        // ★★★ 強制清除舊指令邏輯 ★★★
+        // ★★★ 強制清除舊指令邏輯，並確保新 Provider Mistral 被重置 ★★★
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
-            ['gemini', 'openrouter', 'openai', 'groq', 'perplexity'].forEach(p => {
+            ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => {
                 localStorage.removeItem(`${p}_prompt`);
             });
             localStorage.setItem(PROMPT_VERSION_KEY, 'true');
@@ -452,7 +459,6 @@
         const conf = PROVIDERS[pKey];
         
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
-        // 讀取 Prompt：優先讀使用者儲存的，若無則讀 conf.prompt (即 DEFAULT_PROMPT)
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
@@ -508,7 +514,7 @@
 
         if (!conf.canFetch) return;
         
-        if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
+        if ((pKey === 'gemini' || pKey === 'groq' || pKey === 'mistral') && !apiKey) {
             showTransientStatus("請先輸入 API Key", "error");
             document.getElementById('api-key').focus();
             return;
@@ -528,6 +534,11 @@
                 if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             } 
             else if (pKey === 'groq') {
+                const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+                const data = await res.json();
+                if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
+            }
+            else if (pKey === 'mistral') {
                 const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
                 const data = await res.json();
                 if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
@@ -582,7 +593,6 @@
         localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
         localStorage.setItem(`${pKey}_model`, currentActiveModelId);
         
-        // 儲存用戶的 Prompt
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
         
@@ -592,12 +602,10 @@
 
     function restoreDefaults() {
         const pKey = document.getElementById('provider-select').value;
-        // 恢復時讀取 PROVIDERS 裡的預設指令
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
         document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
         
-        // 清除自訂 prompt
         localStorage.removeItem(`${pKey}_prompt`);
 
         handleProviderChange(true);
@@ -726,7 +734,11 @@
             'Authorization': `Bearer ${apiKey}` 
         };
 
-        if (provider === 'openrouter') {
+        // ★★★ 加入 Mistral 支援 ★★★
+        if (provider === 'mistral') {
+            url = "https://api.mistral.ai/v1/chat/completions";
+        }
+        else if (provider === 'openrouter') {
             url = "https://openrouter.ai/api/v1/chat/completions";
             if (searchEnabled && !model.endsWith(':online')) {
                 model = model + ':online';
@@ -744,12 +756,11 @@
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             delete headers['Authorization'];
             
-            let parts = [{ text: text }]; // 使用純文字
+            let parts = [{ text: text }];
             if (fileBase64) {
                 parts.unshift({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             }
             body = {
-                // ★★★ 修正2: 使用 system_instruction ★★★
                 system_instruction: { parts: [{ text: prompt }] },
                 contents: [{ parts: parts }],
                 tools: searchEnabled ? [{ google_search: {} }] : []
