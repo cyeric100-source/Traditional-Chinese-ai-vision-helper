@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (Mistral AI 整合版)</title>
+    <title>AI 視障助理 (語音+貼圖版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -73,6 +73,18 @@
         button:disabled { filter: grayscale(100%); opacity: 0.7; cursor: not-allowed; }
         button.secondary { background-color: #333; color: #fff; border-color: #777; }
         
+        /* 錄音中按鈕樣式 */
+        button.recording {
+            background-color: #ff0000 !important;
+            color: #ffffff !important;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
         summary { cursor: pointer; padding: 5px; }
         
@@ -110,7 +122,6 @@
         }
         .markdown-body h1, .markdown-body h2 { color: #88CCFF; border-bottom: none; margin-top: 1.5em; }
         .markdown-body p { margin-bottom: 10px; white-space: pre-wrap; } /* 保留換行 */
-        /* 程式碼區塊允許水平捲動 */
         .markdown-body pre { 
             background: #222; padding: 10px; 
             overflow-x: auto; border: 1px solid #444; 
@@ -124,7 +135,7 @@
             padding: 10px; z-index: 100;
         }
 
-        /* 修改 Row 的對齊方式，適應多行輸入框 */
+        /* 修改 Row 的對齊方式，適應多行輸入框與按鈕 */
         .row { display: flex; gap: 10px; margin-bottom: 8px; align-items: flex-end; }
         
         .check-btn {
@@ -141,6 +152,7 @@
             max-height: 200px; /* 最大高度，避免蓋住整個螢幕 */
             resize: vertical;  /* 允許使用者調整 */
             overflow-y: auto;
+            flex: 1; /* 佔滿剩餘空間 */
         }
 
         /* 狀態列 */
@@ -168,7 +180,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (Mistral AI 整合版)</h1>
+    <h1 class="app-title">AI 視障助理 (語音+貼圖版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -246,9 +258,13 @@
         </div>
         
         <div class="row">
-            <!-- 改用 Textarea 支援多行輸入 -->
-            <textarea id="user-input" placeholder="輸入訊息..." accesskey="i" autocomplete="off" rows="3"></textarea>
-            <button type="submit" id="submit-btn" style="width: 90px; height: 80px; margin:0;">傳送</button>
+            <!-- 新增語音輸入按鈕 -->
+            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入 (廣東話)" aria-label="語音輸入">🎤</button>
+            
+            <!-- 文字輸入框 (支援多行與貼上圖片) -->
+            <textarea id="user-input" placeholder="輸入訊息... (可貼上截圖 Ctrl+V)" accesskey="i" autocomplete="off" rows="3"></textarea>
+            
+            <button type="submit" id="submit-btn" style="width: 80px; height: 80px; margin:0;">傳送</button>
         </div>
     </form>
 </footer>
@@ -366,9 +382,10 @@
 
     let currentActiveModelId = "";
     let selectedFile = null;
+    let recognition = null; // 語音識別物件
 
     document.addEventListener('DOMContentLoaded', () => {
-        // ★★★ 強制清除舊指令邏輯，並確保新 Provider Mistral 被重置 ★★★
+        // 強制清除舊指令邏輯
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
             ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => {
                 localStorage.removeItem(`${p}_prompt`);
@@ -391,7 +408,106 @@
         }
         
         handleProviderChange(false); 
+        
+        // ★★★ 初始化語音與貼上功能 ★★★
+        initVoiceInput();
+        initPasteImage();
     });
+
+    // ★★★ 語音輸入功能實作 ★★★
+    function initVoiceInput() {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'zh-HK'; // 設定為廣東話 (香港)
+            recognition.continuous = false; // 講完一句自動停止
+            recognition.interimResults = true; // 顯示即時結果
+
+            recognition.onstart = function() {
+                const btn = document.getElementById('voice-btn');
+                btn.classList.add('recording');
+                showTransientStatus('正在聆聽... (請說話)', 'info');
+            };
+
+            recognition.onresult = function(event) {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+                
+                // 將結果填入輸入框 (保留原有文字)
+                const input = document.getElementById('user-input');
+                // 簡單處理：如果是最終結果，就附加進去；如果是暫時結果，可以顯示在 placeholder 或暫時附加
+                // 這裡簡化邏輯：直接附加最終結果
+                if (finalTranscript) {
+                     const currentVal = input.value;
+                     input.value = currentVal ? currentVal + " " + finalTranscript : finalTranscript;
+                }
+            };
+
+            recognition.onerror = function(event) {
+                console.error(event.error);
+                showTransientStatus('語音辨識錯誤: ' + event.error, 'error');
+                stopVoiceInput();
+            };
+
+            recognition.onend = function() {
+                stopVoiceInput();
+            };
+        } else {
+            document.getElementById('voice-btn').style.display = 'none'; // 不支援則隱藏按鈕
+        }
+    }
+
+    function toggleVoiceInput() {
+        if (!recognition) return;
+        const btn = document.getElementById('voice-btn');
+        if (btn.classList.contains('recording')) {
+            recognition.stop();
+        } else {
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error(e); // 避免重複啟動報錯
+            }
+        }
+    }
+
+    function stopVoiceInput() {
+        const btn = document.getElementById('voice-btn');
+        btn.classList.remove('recording');
+        // 恢復 Ready 狀態
+        const bar = document.getElementById('status-bar');
+        if (bar.innerText.includes('聆聽')) {
+            showReadyStatus();
+        }
+    }
+
+    // ★★★ 剪貼簿貼上圖片功能實作 ★★★
+    function initPasteImage() {
+        document.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].kind === 'file' && items[i].type.startsWith('image/')) {
+                    const blob = items[i].getAsFile();
+                    selectedFile = blob;
+                    
+                    // 更新 UI
+                    document.getElementById('upload-btn').innerText = `✅ 截圖/圖片`;
+                    showTransientStatus(`已貼上圖片: ${blob.name || 'image.png'}`);
+                    
+                    e.preventDefault(); // 阻止預設貼上行為 (避免在輸入框出現亂碼)
+                    return;
+                }
+            }
+        });
+    }
 
     function updateStatusBar(text, state = 'ready') {
         const bar = document.getElementById('status-bar');
@@ -412,10 +528,11 @@
 
     function showTransientStatus(msg, type = 'success') {
         updateStatusBar(msg, type === 'error' ? 'error' : 'ready');
-        if (type === 'success' || type === 'error') {
+        if (type === 'success' || type === 'error' || type === 'info') {
             setTimeout(() => {
                 const bar = document.getElementById('status-bar');
-                if (!bar.classList.contains('busy')) {
+                // 只有當狀態不是 busy 且不是 recording 時才恢復
+                if (!bar.classList.contains('busy') && !document.getElementById('voice-btn').classList.contains('recording')) {
                     showReadyStatus();
                 }
             }, 3000);
@@ -514,7 +631,7 @@
 
         if (!conf.canFetch) return;
         
-        if ((pKey === 'gemini' || pKey === 'groq' || pKey === 'mistral') && !apiKey) {
+        if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
             showTransientStatus("請先輸入 API Key", "error");
             document.getElementById('api-key').focus();
             return;
@@ -613,7 +730,7 @@
     }
 
     function showHelp() {
-        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+I: 輸入\nAlt+C: 複製結果");
+        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+I: 輸入\nAlt+C: 複製結果\nCtrl+V: 貼上圖片");
     }
 
     function copyResult() {
@@ -734,7 +851,6 @@
             'Authorization': `Bearer ${apiKey}` 
         };
 
-        // ★★★ 加入 Mistral 支援 ★★★
         if (provider === 'mistral') {
             url = "https://api.mistral.ai/v1/chat/completions";
         }
