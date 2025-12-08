@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (清單快取版)</title>
+    <title>AI 視障助理 (OpenAI 更新版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -180,7 +180,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (清單快取版)</h1>
+    <h1 class="app-title">AI 視障助理 (OpenAI 更新版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -361,8 +361,10 @@
         openai: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "gpt-4o",
-            canFetch: false,
-            models: ["gpt-4o", "gpt-4o-mini"]
+            // ★★★ 修正: 允許 OpenAI 取得清單 ★★★
+            canFetch: true, 
+            models: ["gpt-4o", "gpt-4o-mini"],
+            listUrl: "https://api.openai.com/v1/models"
         },
         groq: {
             prompt: DEFAULT_PROMPT,
@@ -375,7 +377,7 @@
             prompt: DEFAULT_PROMPT,
             defaultModel: "sonar-pro",
             canFetch: false,
-            models: ["sonar-pro", "sonar"]
+            models: ["sonar-pro", "sonar", "sonar-reasoning-pro", "sonar-deep-research"]
         }
     };
 
@@ -560,7 +562,6 @@
         return div; 
     }
 
-    // ★★★ 核心修改：優先載入快取清單邏輯 ★★★
     function handleProviderChange(save = true) {
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
@@ -568,15 +569,14 @@
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
-        // 1. 嘗試載入已儲存的清單
         const cachedListStr = localStorage.getItem(`${pKey}_model_list`);
-        let modelList = conf.models; // 預設使用內建清單
+        let modelList = conf.models;
         
         if (cachedListStr) {
             try {
                 const parsedList = JSON.parse(cachedListStr);
                 if (Array.isArray(parsedList) && parsedList.length > 0) {
-                    modelList = parsedList; // 使用快取清單
+                    modelList = parsedList;
                 }
             } catch (e) {
                 console.error("無法解析快取清單", e);
@@ -586,7 +586,6 @@
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         currentActiveModelId = savedModel;
         
-        // 2. 更新下拉選單
         updateModelSelect(modelList, savedModel);
         
         const searchCheck = document.getElementById('enable-search');
@@ -630,7 +629,6 @@
         }
     }
 
-    // ★★★ 核心修改：成功取得清單後，儲存至 localStorage ★★★
     async function fetchOnlineModels() {
         const pKey = document.getElementById('provider-select').value;
         const apiKey = document.getElementById('api-key').value;
@@ -638,7 +636,8 @@
 
         if (!conf.canFetch) return;
         
-        if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
+        // 注意：OpenAI, Groq, Mistral, Gemini 都要 Key 才能更新
+        if ((pKey === 'gemini' || pKey === 'groq' || pKey === 'mistral' || pKey === 'openai') && !apiKey) {
             showTransientStatus("請先輸入 API Key", "error");
             document.getElementById('api-key').focus();
             return;
@@ -673,9 +672,20 @@
                 if (data.models) newModels = data.models.map(m => m.name.replace("models/", "")).filter(m => m.includes("gemini") && !m.includes("1.0"));
                 newModels = Array.from(new Set([...conf.models, ...newModels]));
             }
+            // ★★★ 修正: 加入 OpenAI 的更新邏輯 ★★★
+            else if (pKey === 'openai') {
+                const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+                const data = await res.json();
+                if (data.data) {
+                    // 只保留 gpt 開頭的模型 (排除 dall-e, whisper 等)
+                    newModels = data.data
+                        .filter(m => m.id.startsWith('gpt'))
+                        .sort((a, b) => (b.created || 0) - (a.created || 0))
+                        .map(m => m.id);
+                }
+            }
 
             if (newModels.length > 0) {
-                // ★★★ 儲存清單到本機 ★★★
                 localStorage.setItem(`${pKey}_model_list`, JSON.stringify(newModels));
                 
                 updateModelSelect(newModels, newModels[0]); 
@@ -685,7 +695,7 @@
                 showTransientStatus("未找到模型", "error");
             }
         } catch (e) {
-            showTransientStatus(`更新失敗`, "error");
+            showTransientStatus(`更新失敗: ${e.message}`, "error");
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
@@ -734,7 +744,6 @@
         localStorage.removeItem(`${pKey}_model`);
         localStorage.removeItem(`${pKey}_prompt`);
         
-        // ★★★ 清除快取的模型清單 ★★★
         localStorage.removeItem(`${pKey}_model_list`);
 
         handleProviderChange(true);
