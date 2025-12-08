@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (Gemini 增強版 + Whisper)</title>
+    <title>AI 視障助理 (記憶增強版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -19,6 +19,7 @@
             --button-bg: #FFFF00;
             --button-text: #000000;
             --status-bg: #222;            /* 狀態列背景 */
+            --danger-color: #ff4444;      /* 危險操作色 */
         }
 
         body {
@@ -73,6 +74,13 @@
         button:disabled { filter: grayscale(100%); opacity: 0.7; cursor: not-allowed; }
         button.secondary { background-color: #333; color: #fff; border-color: #777; }
         
+        /* 危險按鈕 (新對話) */
+        button.danger {
+            background-color: #550000;
+            color: #ffcccc;
+            border-color: #ff4444;
+        }
+
         /* 錄音中按鈕樣式 */
         button.recording {
             background-color: #ff0000 !important;
@@ -191,7 +199,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (Gemini 增強版)</h1>
+    <h1 class="app-title">AI 視障助理 (記憶增強版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -278,8 +286,15 @@
 
         <div class="row">
             <input type="file" id="file-input" class="visually-hidden" accept="*/*" onchange="handleFileSelect()">
-            <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u">
+            
+            <!-- 上傳按鈕 -->
+            <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u" style="flex:1;">
                 📷 拍攝/檔案 (Alt+U)
+            </button>
+            
+            <!-- 新增：新對話按鈕 -->
+            <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" accesskey="n" style="flex:1;">
+                🗑️ 新對話 (Alt+N)
             </button>
         </div>
         
@@ -359,7 +374,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_fix_v2";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_memory_v1";
 
     const PROVIDERS = {
         gemini: {
@@ -410,6 +425,9 @@
     let recognition = null; 
     let mediaRecorder = null;
     let audioChunks = [];
+    
+    // 對話記憶變數
+    let chatHistory = [];
 
     document.addEventListener('DOMContentLoaded', () => {
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
@@ -445,6 +463,18 @@
         initVoiceSystem();
         initPasteImage();
     });
+
+    // --- 新增：重置對話功能 ---
+    function resetConversation() {
+        chatHistory = []; // 清空記憶
+        document.getElementById('chat-output').innerHTML = ""; // 清空畫面
+        document.getElementById('user-input').value = "";
+        selectedFile = null;
+        document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+        document.getElementById('file-input').value = "";
+        
+        showTransientStatus("對話紀錄已清除 (新對話)", "info");
+    }
 
     function initVoiceSystem() {
         const engine = document.getElementById('voice-engine').value;
@@ -580,7 +610,6 @@
         }
 
         formData.append('model', modelName);
-        // formData.append('language', 'zh'); // 可選，讓它自動偵測通常比較好
 
         try {
             const res = await fetch(url, {
@@ -741,6 +770,9 @@
 
         document.getElementById('refresh-btn').style.display = conf.canFetch ? 'block' : 'none';
         
+        // 切換服務商時，重置對話
+        resetConversation();
+        
         if (save) localStorage.setItem('provider', pKey);
         showReadyStatus();
     }
@@ -810,7 +842,7 @@
                 const data = await res.json();
                 if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             }
-            // Gemini 篩選邏輯 (generateContent Only)
+            // Gemini 篩選邏輯
             else if (pKey === 'gemini') {
                 const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
                 const data = await res.json();
@@ -838,9 +870,12 @@
 
             if (newModels.length > 0) {
                 localStorage.setItem(`${pKey}_model_list`, JSON.stringify(newModels));
-                
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
+                
+                // 更新模型列表後重置對話
+                resetConversation();
+                
                 showTransientStatus(`更新成功 (${newModels.length} 個模型)`);
             } else {
                 showTransientStatus("未找到合適模型", "error");
@@ -863,11 +898,14 @@
             document.getElementById('custom-model-wrapper').classList.add('hidden');
             currentActiveModelId = select.value;
         }
+        // 切換模型時重置對話
+        resetConversation();
         showReadyStatus(); 
     }
 
     function handleCustomInputChange() {
         currentActiveModelId = document.getElementById('custom-model-input').value.trim();
+        resetConversation();
         showReadyStatus();
     }
 
@@ -884,7 +922,6 @@
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
         
-        // 儲存語音設定
         saveVoiceSettings();
         
         showTransientStatus("設定已儲存"); 
@@ -905,7 +942,7 @@
     }
 
     function showHelp() {
-        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+I: 輸入\nAlt+C: 複製結果\nCtrl+V: 貼上圖片");
+        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+N: 新對話\nAlt+I: 輸入\nAlt+C: 複製結果\nCtrl+V: 貼上圖片");
     }
 
     function copyResult() {
@@ -951,21 +988,35 @@
                 fileData = await readFileAsBase64(selectedFile);
             }
 
+            // 呼叫 AI (傳入整個歷史紀錄)
             const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
             
-            clearOldData();
+            // 清除輸入框
+            document.getElementById('user-input').value = "";      
+            document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+            document.getElementById('file-input').value = "";
+            selectedFile = null; 
             
+            // 顯示結果
             let displayMsg = userInput;
-            if (selectedFile) displayMsg = `[檔案: ${selectedFile.name}] ${displayMsg}`;
+            if (fileData) displayMsg = `[已上傳圖片/檔案] ${displayMsg}`;
             addMessage('user', displayMsg);
             
             const aiMsgDiv = addMessage('assistant', response);
             
+            // --- 更新歷史紀錄 (僅儲存文字，避免圖片重複傳送造成流量爆炸) ---
+            if (pKey === 'gemini') {
+                chatHistory.push({ role: "user", parts: [{ text: userInput }] }); // 圖片只在當次發送，歷史不存圖片數據
+                chatHistory.push({ role: "model", parts: [{ text: response }] });
+            } else {
+                chatHistory.push({ role: "user", content: userInput });
+                chatHistory.push({ role: "assistant", content: response });
+            }
+
             focusTarget(aiMsgDiv);
             showReadyStatus();
 
         } catch (err) {
-            clearOldData();
             addMessage('user', userInput);
 
             let errMsg = "";
@@ -982,15 +1033,7 @@
         } finally {
             clearTimeout(timeoutId);
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
-            selectedFile = null; 
         }
-    }
-
-    function clearOldData() {
-        document.getElementById('chat-output').innerHTML = ""; 
-        document.getElementById('user-input').value = "";      
-        document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
-        document.getElementById('file-input').value = "";
     }
 
     function focusTarget(element) {
@@ -1026,34 +1069,34 @@
             'Authorization': `Bearer ${apiKey}` 
         };
 
+        // --- Gemini 實作 (記憶功能) ---
         if (provider === 'gemini') {
-            // Gemini URL
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             delete headers['Authorization']; 
 
-            const parts = [];
+            // 1. 建構當前訊息
+            const currentParts = [];
             if (fileBase64) {
-                parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
+                currentParts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             }
-            parts.push({ text: text });
+            currentParts.push({ text: text });
 
-            // Gemini Tools (Search)
+            // 2. 結合歷史紀錄 (History + Current)
+            const fullContents = [...chatHistory, { role: "user", parts: currentParts }];
+
             let tools = [];
             if (searchEnabled) {
                 tools.push({ google_search_retrieval: {} });
             }
             
             body = {
-                // 使用原生 system_instruction (修正點 2)
-                system_instruction: {
-                    parts: [{ text: prompt }]
-                },
-                contents: [{ role: "user", parts: parts }]
+                system_instruction: { parts: [{ text: prompt }] },
+                contents: fullContents
             };
             if (searchEnabled) body.tools = tools;
 
         } else {
-            // OpenAI Compatible Providers
+            // --- OpenAI / Mistral / 其他實作 (記憶功能) ---
             if (provider === 'mistral') url = "https://api.mistral.ai/v1/chat/completions";
             else if (provider === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
@@ -1065,17 +1108,22 @@
             else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
             else if (provider === 'perplexity') url = "https://api.perplexity.ai/chat/completions";
 
-            let messages = [
-                { role: "system", content: prompt },
-                { role: "user", content: text }
-            ];
+            // 1. 建構 System Message
+            let messages = [{ role: "system", content: prompt }];
+            
+            // 2. 加入歷史紀錄
+            messages = messages.concat(chatHistory);
 
+            // 3. 加入當前訊息
+            let currentContent = text;
             if (fileBase64) {
-                messages[1].content = [
+                // OpenAI Vision 格式
+                currentContent = [
                     { type: "text", text: text },
                     { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
                 ];
             }
+            messages.push({ role: "user", content: currentContent });
 
             body = {
                 model: model,
@@ -1098,10 +1146,9 @@
 
         const data = await res.json();
         
-        // 解析與錯誤處理
+        // 解析回應
         if (provider === 'gemini') {
             const candidate = data.candidates?.[0];
-            // 安全性檢查 (修正點 1)
             if (!candidate) throw new Error("Gemini 未回傳候選結果");
             if (candidate.finishReason !== "STOP") {
                 throw new Error(`Gemini 安全過濾或停止: ${candidate.finishReason}`);
