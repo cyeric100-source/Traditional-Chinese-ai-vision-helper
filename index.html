@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (記憶增強版)</title>
+    <title>AI 視障助理 (完整增強版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -73,6 +73,14 @@
         }
         button:disabled { filter: grayscale(100%); opacity: 0.7; cursor: not-allowed; }
         button.secondary { background-color: #333; color: #fff; border-color: #777; }
+        
+        /* 單則複製按鈕 (小) */
+        button.mini-copy-btn {
+            background-color: #333; color: #fff; border: 1px solid #777;
+            padding: 6px 12px; font-size: 0.9rem; margin-top: 10px;
+            width: auto; display: inline-block;
+        }
+        button.mini-copy-btn:hover { background-color: #555; }
         
         /* 危險按鈕 (新對話) */
         button.danger {
@@ -199,7 +207,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (記憶增強版)</h1>
+    <h1 class="app-title">AI 視障助理 (完整增強版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -265,7 +273,7 @@
     <main role="main">
         <div id="chat-output" class="message-area"></div>
         <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="width:100%; margin-bottom: 20px;">
-            📋 複製 (Alt+C)
+            📋 複製全部對話 (Alt+C)
         </button>
     </main>
 </div>
@@ -292,7 +300,7 @@
                 📷 拍攝/檔案 (Alt+U)
             </button>
             
-            <!-- 新增：新對話按鈕 -->
+            <!-- 新對話按鈕 -->
             <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" accesskey="n" style="flex:1;">
                 🗑️ 新對話 (Alt+N)
             </button>
@@ -374,7 +382,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_memory_v1";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_memory_v2";
 
     const PROVIDERS = {
         gemini: {
@@ -464,7 +472,7 @@
         initPasteImage();
     });
 
-    // --- 新增：重置對話功能 ---
+    // --- 重置對話功能 ---
     function resetConversation() {
         chatHistory = []; // 清空記憶
         document.getElementById('chat-output').innerHTML = ""; // 清空畫面
@@ -722,6 +730,19 @@
             header.innerText = '回應結果：';
             contentDiv.innerHTML = marked.parse(content);
             document.getElementById('copy-btn').classList.remove('hidden');
+            
+            // --- 新增：單則訊息複製按鈕 ---
+            const miniCopyBtn = document.createElement('button');
+            miniCopyBtn.className = 'mini-copy-btn';
+            miniCopyBtn.innerText = '📄 複製此回應';
+            miniCopyBtn.ariaLabel = '複製此回應';
+            miniCopyBtn.onclick = function() {
+                navigator.clipboard.writeText(contentDiv.innerText)
+                    .then(() => showTransientStatus("已複製該回應"));
+            };
+            // 將按鈕加在內容下方
+            div.appendChild(miniCopyBtn);
+
         } else {
             header.innerText = (role === 'error') ? '發生錯誤：' : '系統訊息：';
             contentDiv.innerText = content;
@@ -942,13 +963,13 @@
     }
 
     function showHelp() {
-        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+N: 新對話\nAlt+I: 輸入\nAlt+C: 複製結果\nCtrl+V: 貼上圖片");
+        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+N: 新對話\nAlt+I: 輸入\nAlt+C: 複製全部\nCtrl+V: 貼上圖片");
     }
 
     function copyResult() {
         const output = document.getElementById('chat-output');
         const text = output.innerText;
-        navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部內容"));
+        navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部歷史紀錄"));
     }
 
     function handleFileSelect() {
@@ -1004,9 +1025,9 @@
             
             const aiMsgDiv = addMessage('assistant', response);
             
-            // --- 更新歷史紀錄 (僅儲存文字，避免圖片重複傳送造成流量爆炸) ---
+            // --- 更新歷史紀錄 (僅儲存文字) ---
             if (pKey === 'gemini') {
-                chatHistory.push({ role: "user", parts: [{ text: userInput }] }); // 圖片只在當次發送，歷史不存圖片數據
+                chatHistory.push({ role: "user", parts: [{ text: userInput }] });
                 chatHistory.push({ role: "model", parts: [{ text: response }] });
             } else {
                 chatHistory.push({ role: "user", content: userInput });
