@@ -338,9 +338,9 @@
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "gemini-exp-1204", 
+            defaultModel: "gemini-exp-1206", 
             canFetch: true,
-            models: ["gemini-exp-1204", "gemini-1.5-pro", "gemini-1.5-flash"],
+            models: ["gemini-exp-1206", "gemini-1.5-pro", "gemini-1.5-flash"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         mistral: {
@@ -663,26 +663,23 @@
                 const data = await res.json();
                 if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             }
-            // ★★★ 修正: Gemini 智慧篩選器 ★★★
+            // ★★★ Gemini 核心篩選邏輯修正：只選取支援對話的模型 ★★★
             else if (pKey === 'gemini') {
                 const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
                 const data = await res.json();
                 if (data.models) {
                     newModels = data.models
                         .filter(m => {
-                            // 1. 必須支援 generateContent (聊天)
+                            // 1. 關鍵篩選：檢查 supportedGenerationMethods 屬性
                             const methods = m.supportedGenerationMethods || [];
-                            if (!methods.includes("generateContent")) return false;
-                            
-                            // 2. 排除 Embedding, AQA, 舊版 1.0
-                            const lowerName = m.name.toLowerCase();
-                            if (lowerName.includes("embedding")) return false;
-                            if (lowerName.includes("aqa")) return false;
-                            if (lowerName.includes("gemini-1.0")) return false;
-                            
-                            return true;
+                            // 只保留支援 'generateContent' (對話/生成) 的模型
+                            return methods.includes("generateContent");
                         })
-                        // 3. 排序 (讓新的版本排在前面)
+                        .filter(m => {
+                             // 2. 額外保險：排除名稱中含有 embedding 的模型
+                             return !m.name.toLowerCase().includes("embedding");
+                        })
+                        // 3. 排序：讓較新的模型 (通常版本號較大) 排在前面
                         .sort((a, b) => b.name.localeCompare(a.name))
                         .map(m => m.name.replace("models/", ""));
                 }
@@ -885,70 +882,77 @@
             'Authorization': `Bearer ${apiKey}` 
         };
 
-        if (provider === 'mistral') {
-            url = "https://api.mistral.ai/v1/chat/completions";
-        }
-        else if (provider === 'openrouter') {
-            url = "https://openrouter.ai/api/v1/chat/completions";
-            if (searchEnabled && !model.endsWith(':online')) {
-                model = model + ':online';
-            }
-            headers['HTTP-Referer'] = window.location.href; 
-            headers['X-Title'] = 'AI Assistant';
-        }
-        else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
-        else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
-        else if (provider === 'perplexity') url = "https://api.perplexity.ai/chat/completions";
-
-        const finalPrompt = prompt + "\n使用者輸入: " + text;
-
         if (provider === 'gemini') {
+            // Gemini 專用格式
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            delete headers['Authorization'];
+            delete headers['Authorization']; // Gemini 用 URL param
+
+            const parts = [];
+            if (fileBase64) {
+                parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
+            }
+            // Gemini 1.5 對搜尋的支援格式略有不同，此處主要實作一般文字/圖片
+            // 若需搜尋工具，需在 tools 中加入 google_search_retrieval
+            let tools = [];
+            if (searchEnabled) {
+                tools.push({ google_search_retrieval: {} });
+            }
             
-            let parts = [{ text: text }];
-            if (fileBase64) {
-                parts.unshift({ inline_data: { mime_type: mimeType, data: fileBase64 } });
-            }
+            parts.push({ text: prompt + "\n\n用戶輸入:\n" + text });
+            
             body = {
-                system_instruction: { parts: [{ text: prompt }] },
-                contents: [{ parts: parts }],
-                tools: searchEnabled ? [{ google_search: {} }] : []
+                contents: [{ role: "user", parts: parts }]
             };
-        } 
-        else {
-            let messages = [];
-            messages.push({ role: "system", content: prompt });
+            if (searchEnabled) body.tools = tools;
+
+        } else {
+            // OpenAI 兼容格式 (Mistral, OpenAI, Groq, OpenRouter, Perplexity)
+            if (provider === 'mistral') url = "https://api.mistral.ai/v1/chat/completions";
+            else if (provider === 'openrouter') {
+                url = "https://openrouter.ai/api/v1/chat/completions";
+                headers['HTTP-Referer'] = window.location.href; 
+                headers['X-Title'] = 'AI Assistant';
+                if (searchEnabled && !model.endsWith(':online')) model += ':online';
+            }
+            else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
+            else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
+            else if (provider === 'perplexity') url = "https://api.perplexity.ai/chat/completions";
+
+            let messages = [
+                { role: "system", content: prompt },
+                { role: "user", content: text }
+            ];
 
             if (fileBase64) {
-                messages.push({
-                    role: "user",
-                    content: [
-                        { type: "text", text: "使用者輸入: " + text },
-                        { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
-                    ]
-                });
-            } else {
-                messages.push({ role: "user", content: "使用者輸入: " + text });
+                // OpenAI Vision 格式
+                messages[1].content = [
+                    { type: "text", text: text },
+                    { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
+                ];
             }
 
-            body = { model: model, messages: messages };
+            body = {
+                model: model,
+                messages: messages,
+                temperature: 0.7
+            };
         }
 
         const res = await fetch(url, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(body),
-            signal: signal 
+            signal: signal
         });
 
         if (!res.ok) {
             const errText = await res.text();
-            throw new Error(`HTTP ${res.status}: ${errText}`);
+            throw new Error(`API 錯誤 (${res.status}): ${errText}`);
         }
 
         const data = await res.json();
         
+        // 解析回應
         if (provider === 'gemini') {
             if (data.candidates && data.candidates[0].content) {
                 return data.candidates[0].content.parts.map(p => p.text).join('');
@@ -958,7 +962,7 @@
                 return data.choices[0].message.content;
             }
         }
-        return "無回應內容";
+        return "無法解析 AI 回應";
     }
 </script>
 </body>
