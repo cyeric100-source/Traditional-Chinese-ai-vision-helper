@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (語音+貼圖版)</title>
+    <title>AI 視障助理 (清單快取版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -180,7 +180,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (語音+貼圖版)</h1>
+    <h1 class="app-title">AI 視障助理 (清單快取版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -258,7 +258,7 @@
         </div>
         
         <div class="row">
-            <!-- 新增語音輸入按鈕 -->
+            <!-- 語音輸入按鈕 -->
             <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入 (廣東話)" aria-label="語音輸入">🎤</button>
             
             <!-- 文字輸入框 (支援多行與貼上圖片) -->
@@ -334,7 +334,6 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    // 強制更新 Key
     const PROMPT_VERSION_KEY = "prompt_version_2025_mistral";
 
     const PROVIDERS = {
@@ -382,10 +381,9 @@
 
     let currentActiveModelId = "";
     let selectedFile = null;
-    let recognition = null; // 語音識別物件
+    let recognition = null; 
 
     document.addEventListener('DOMContentLoaded', () => {
-        // 強制清除舊指令邏輯
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
             ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => {
                 localStorage.removeItem(`${p}_prompt`);
@@ -409,19 +407,17 @@
         
         handleProviderChange(false); 
         
-        // ★★★ 初始化語音與貼上功能 ★★★
         initVoiceInput();
         initPasteImage();
     });
 
-    // ★★★ 語音輸入功能實作 ★★★
     function initVoiceInput() {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
-            recognition.lang = 'zh-HK'; // 設定為廣東話 (香港)
-            recognition.continuous = false; // 講完一句自動停止
-            recognition.interimResults = true; // 顯示即時結果
+            recognition.lang = 'zh-HK'; 
+            recognition.continuous = false; 
+            recognition.interimResults = true; 
 
             recognition.onstart = function() {
                 const btn = document.getElementById('voice-btn');
@@ -441,10 +437,7 @@
                     }
                 }
                 
-                // 將結果填入輸入框 (保留原有文字)
                 const input = document.getElementById('user-input');
-                // 簡單處理：如果是最終結果，就附加進去；如果是暫時結果，可以顯示在 placeholder 或暫時附加
-                // 這裡簡化邏輯：直接附加最終結果
                 if (finalTranscript) {
                      const currentVal = input.value;
                      input.value = currentVal ? currentVal + " " + finalTranscript : finalTranscript;
@@ -461,7 +454,7 @@
                 stopVoiceInput();
             };
         } else {
-            document.getElementById('voice-btn').style.display = 'none'; // 不支援則隱藏按鈕
+            document.getElementById('voice-btn').style.display = 'none'; 
         }
     }
 
@@ -474,7 +467,7 @@
             try {
                 recognition.start();
             } catch (e) {
-                console.error(e); // 避免重複啟動報錯
+                console.error(e); 
             }
         }
     }
@@ -482,14 +475,12 @@
     function stopVoiceInput() {
         const btn = document.getElementById('voice-btn');
         btn.classList.remove('recording');
-        // 恢復 Ready 狀態
         const bar = document.getElementById('status-bar');
         if (bar.innerText.includes('聆聽')) {
             showReadyStatus();
         }
     }
 
-    // ★★★ 剪貼簿貼上圖片功能實作 ★★★
     function initPasteImage() {
         document.addEventListener('paste', (e) => {
             const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -498,11 +489,10 @@
                     const blob = items[i].getAsFile();
                     selectedFile = blob;
                     
-                    // 更新 UI
                     document.getElementById('upload-btn').innerText = `✅ 截圖/圖片`;
                     showTransientStatus(`已貼上圖片: ${blob.name || 'image.png'}`);
                     
-                    e.preventDefault(); // 阻止預設貼上行為 (避免在輸入框出現亂碼)
+                    e.preventDefault(); 
                     return;
                 }
             }
@@ -531,7 +521,6 @@
         if (type === 'success' || type === 'error' || type === 'info') {
             setTimeout(() => {
                 const bar = document.getElementById('status-bar');
-                // 只有當狀態不是 busy 且不是 recording 時才恢復
                 if (!bar.classList.contains('busy') && !document.getElementById('voice-btn').classList.contains('recording')) {
                     showReadyStatus();
                 }
@@ -571,6 +560,7 @@
         return div; 
     }
 
+    // ★★★ 核心修改：優先載入快取清單邏輯 ★★★
     function handleProviderChange(save = true) {
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
@@ -578,10 +568,26 @@
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
+        // 1. 嘗試載入已儲存的清單
+        const cachedListStr = localStorage.getItem(`${pKey}_model_list`);
+        let modelList = conf.models; // 預設使用內建清單
+        
+        if (cachedListStr) {
+            try {
+                const parsedList = JSON.parse(cachedListStr);
+                if (Array.isArray(parsedList) && parsedList.length > 0) {
+                    modelList = parsedList; // 使用快取清單
+                }
+            } catch (e) {
+                console.error("無法解析快取清單", e);
+            }
+        }
+
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         currentActiveModelId = savedModel;
         
-        updateModelSelect(conf.models, savedModel);
+        // 2. 更新下拉選單
+        updateModelSelect(modelList, savedModel);
         
         const searchCheck = document.getElementById('enable-search');
         const allowSearch = ['gemini', 'perplexity', 'openrouter'].includes(pKey);
@@ -624,6 +630,7 @@
         }
     }
 
+    // ★★★ 核心修改：成功取得清單後，儲存至 localStorage ★★★
     async function fetchOnlineModels() {
         const pKey = document.getElementById('provider-select').value;
         const apiKey = document.getElementById('api-key').value;
@@ -668,6 +675,9 @@
             }
 
             if (newModels.length > 0) {
+                // ★★★ 儲存清單到本機 ★★★
+                localStorage.setItem(`${pKey}_model_list`, JSON.stringify(newModels));
+                
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
                 showTransientStatus(`更新成功`);
@@ -722,8 +732,10 @@
         document.getElementById('system-prompt').value = PROVIDERS[pKey].prompt;
         document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
-        
         localStorage.removeItem(`${pKey}_prompt`);
+        
+        // ★★★ 清除快取的模型清單 ★★★
+        localStorage.removeItem(`${pKey}_model_list`);
 
         handleProviderChange(true);
         showTransientStatus("已恢復預設");
