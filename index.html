@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (Gemini 智慧篩選版)</title>
+    <title>AI 視障助理 (Gemini 增強版 + Whisper)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -79,6 +79,11 @@
             color: #ffffff !important;
             animation: pulse 1.5s infinite;
         }
+        button.processing {
+            background-color: #ff8800 !important;
+            animation: pulse 0.5s infinite;
+        }
+
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
             70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
@@ -172,6 +177,12 @@
         .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
         
         #custom-model-wrapper { margin-top: -5px; margin-bottom: 10px; }
+        
+        /* Whisper 設定區樣式 */
+        .settings-subsection {
+            border: 1px solid #444; padding: 10px; border-radius: 6px; margin: 10px 0; background: #222;
+        }
+        .settings-subsection h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: var(--accent-color); }
     </style>
 </head>
 <body>
@@ -180,7 +191,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (Gemini 智慧篩選版)</h1>
+    <h1 class="app-title">AI 視障助理 (Gemini 增強版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -189,17 +200,17 @@
         </summary>
         
         <div style="margin-top: 15px;">
-            <label for="provider-select">AI 服務商:</label>
+            <label for="provider-select">主要 AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (推薦)</option>
-                <option value="mistral">Mistral AI (歐洲頂尖)</option>
-                <option value="openrouter">OpenRouter (多模型+聯網)</option>
+                <option value="mistral">Mistral AI</option>
+                <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI (GPT)</option>
-                <option value="groq">Groq (Llama)</option>
-                <option value="perplexity">Perplexity (搜尋專用)</option>
+                <option value="groq">Groq</option>
+                <option value="perplexity">Perplexity</option>
             </select>
 
-            <label for="api-key">API Key:</label>
+            <label for="api-key">主要 API Key:</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
             <label for="model-select">模型選擇 (日期由新到舊):</label>
@@ -210,6 +221,21 @@
             
             <div id="custom-model-wrapper" class="hidden">
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
+            </div>
+
+            <!-- 語音設定區塊 -->
+            <div class="settings-subsection">
+                <h3>🎤 語音輸入設定</h3>
+                <label for="voice-engine">語音引擎:</label>
+                <select id="voice-engine" onchange="saveVoiceSettings()">
+                    <option value="browser">瀏覽器原生 (免費，品質普通)</option>
+                    <option value="openai">OpenAI Whisper (高準確，需付費)</option>
+                    <option value="groq">Groq Whisper (極速，需 Key)</option>
+                </select>
+                
+                <label for="voice-api-key">語音專用 API Key (選填):</label>
+                <input type="password" id="voice-api-key" placeholder="若留空，將嘗試使用主要 API Key" autocomplete="off" onchange="saveVoiceSettings()">
+                <small style="color:#aaa; display:block; margin-bottom:5px;">* 若使用 Gemini 聊天但想用 Whisper 語音，請在此填入 OpenAI/Groq Key。</small>
             </div>
 
             <!-- Timeout 設定 -->
@@ -259,7 +285,7 @@
         
         <div class="row">
             <!-- 語音輸入按鈕 -->
-            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入 (廣東話)" aria-label="語音輸入">🎤</button>
+            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入" aria-label="語音輸入">🎤</button>
             
             <!-- 文字輸入框 (支援多行與貼上圖片) -->
             <textarea id="user-input" placeholder="輸入訊息... (可貼上截圖 Ctrl+V)" accesskey="i" autocomplete="off" rows="3"></textarea>
@@ -333,7 +359,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_fix";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_fix_v2";
 
     const PROVIDERS = {
         gemini: {
@@ -382,6 +408,8 @@
     let currentActiveModelId = "";
     let selectedFile = null;
     let recognition = null; 
+    let mediaRecorder = null;
+    let audioChunks = [];
 
     document.addEventListener('DOMContentLoaded', () => {
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
@@ -397,6 +425,12 @@
         const savedTimeout = localStorage.getItem('timeout_setting');
         if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
 
+        // 還原語音設定
+        const savedVoiceEngine = localStorage.getItem('voice_engine');
+        if (savedVoiceEngine) document.getElementById('voice-engine').value = savedVoiceEngine;
+        const savedVoiceKey = localStorage.getItem('voice_api_key');
+        if (savedVoiceKey) document.getElementById('voice-api-key').value = savedVoiceKey;
+
         if (savedProvider) {
             document.getElementById('provider-select').value = savedProvider;
             settingsDetails.open = false; 
@@ -407,11 +441,25 @@
         
         handleProviderChange(false); 
         
-        initVoiceInput();
+        // 判斷初始化哪種語音
+        initVoiceSystem();
         initPasteImage();
     });
 
-    function initVoiceInput() {
+    function initVoiceSystem() {
+        const engine = document.getElementById('voice-engine').value;
+        if (engine === 'browser') {
+            initBrowserSpeech();
+        } else {
+            // Whisper 模式不需要預先 init，但在點擊時觸發 MediaRecorder
+            if (recognition) {
+                recognition.stop();
+                recognition = null;
+            }
+        }
+    }
+
+    function initBrowserSpeech() {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
@@ -422,21 +470,16 @@
             recognition.onstart = function() {
                 const btn = document.getElementById('voice-btn');
                 btn.classList.add('recording');
-                showTransientStatus('正在聆聽... (請說話)', 'info');
+                showTransientStatus('正在聆聽 (瀏覽器)...', 'info');
             };
 
             recognition.onresult = function(event) {
                 let interimTranscript = '';
                 let finalTranscript = '';
-
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
-                    } else {
-                        interimTranscript += event.results[i][0].transcript;
-                    }
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                    else interimTranscript += event.results[i][0].transcript;
                 }
-                
                 const input = document.getElementById('user-input');
                 if (finalTranscript) {
                      const currentVal = input.value;
@@ -449,36 +492,140 @@
                 showTransientStatus('語音辨識錯誤: ' + event.error, 'error');
                 stopVoiceInput();
             };
-
             recognition.onend = function() {
                 stopVoiceInput();
             };
         } else {
-            document.getElementById('voice-btn').style.display = 'none'; 
+            console.warn("Browser speech not supported");
         }
     }
 
-    function toggleVoiceInput() {
-        if (!recognition) return;
+    async function toggleVoiceInput() {
+        const engine = document.getElementById('voice-engine').value;
         const btn = document.getElementById('voice-btn');
+
+        // 停止邏輯 (共用)
         if (btn.classList.contains('recording')) {
-            recognition.stop();
-        } else {
-            try {
-                recognition.start();
-            } catch (e) {
-                console.error(e); 
+            if (engine === 'browser' && recognition) {
+                recognition.stop();
+            } else {
+                // Whisper Stop
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                    btn.classList.remove('recording');
+                    btn.classList.add('processing'); // 轉圈圈狀態
+                    showTransientStatus('正在上傳並辨識...', 'busy');
+                }
             }
+            return;
+        }
+
+        // 開始邏輯
+        if (engine === 'browser') {
+            if (recognition) recognition.start();
+            else showTransientStatus('此瀏覽器不支援原生語音', 'error');
+        } else {
+            // Whisper Start
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); // 或 mp4
+                    await processWhisperAudio(audioBlob, engine);
+                    
+                    // 關閉 Stream
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                btn.classList.add('recording');
+                showTransientStatus('正在錄音 (Whisper)...', 'info');
+            } catch (err) {
+                showTransientStatus('無法存取麥克風: ' + err.message, 'error');
+            }
+        }
+    }
+
+    async function processWhisperAudio(blob, engine) {
+        const btn = document.getElementById('voice-btn');
+        // 取得 Key: 優先用 Voice Key，沒有則用 Main Key
+        let apiKey = document.getElementById('voice-api-key').value.trim();
+        if (!apiKey) apiKey = document.getElementById('api-key').value.trim();
+
+        if (!apiKey) {
+            alert("使用 Whisper 語音需要 API Key (OpenAI 或 Groq)。\n請在設定中填寫。");
+            btn.classList.remove('processing');
+            showReadyStatus();
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', blob, 'recording.webm');
+        
+        let url = "";
+        let modelName = "";
+
+        if (engine === 'openai') {
+            url = "https://api.openai.com/v1/audio/transcriptions";
+            modelName = "whisper-1";
+        } else if (engine === 'groq') {
+            url = "https://api.groq.com/openai/v1/audio/transcriptions";
+            modelName = "whisper-large-v3"; // Groq 模型
+        }
+
+        formData.append('model', modelName);
+        // formData.append('language', 'zh'); // 可選，讓它自動偵測通常比較好
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: formData
+            });
+            
+            if (!res.ok) throw new Error(await res.text());
+            
+            const data = await res.json();
+            const text = data.text;
+            
+            if (text) {
+                const input = document.getElementById('user-input');
+                const currentVal = input.value;
+                input.value = currentVal ? currentVal + " " + text : text;
+                showTransientStatus("辨識完成");
+            }
+        } catch (e) {
+            showTransientStatus("Whisper 錯誤: " + e.message, 'error');
+        } finally {
+            btn.classList.remove('processing');
+            showReadyStatus();
         }
     }
 
     function stopVoiceInput() {
         const btn = document.getElementById('voice-btn');
         btn.classList.remove('recording');
+        btn.classList.remove('processing');
         const bar = document.getElementById('status-bar');
-        if (bar.innerText.includes('聆聽')) {
+        if (bar.innerText.includes('聆聽') || bar.innerText.includes('錄音')) {
             showReadyStatus();
         }
+    }
+
+    function saveVoiceSettings() {
+        const engine = document.getElementById('voice-engine').value;
+        const key = document.getElementById('voice-api-key').value;
+        localStorage.setItem('voice_engine', engine);
+        localStorage.setItem('voice_api_key', key);
+        initVoiceSystem();
     }
 
     function initPasteImage() {
@@ -663,23 +810,17 @@
                 const data = await res.json();
                 if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             }
-            // ★★★ Gemini 核心篩選邏輯修正：只選取支援對話的模型 ★★★
+            // Gemini 篩選邏輯 (generateContent Only)
             else if (pKey === 'gemini') {
                 const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
                 const data = await res.json();
                 if (data.models) {
                     newModels = data.models
                         .filter(m => {
-                            // 1. 關鍵篩選：檢查 supportedGenerationMethods 屬性
                             const methods = m.supportedGenerationMethods || [];
-                            // 只保留支援 'generateContent' (對話/生成) 的模型
                             return methods.includes("generateContent");
                         })
-                        .filter(m => {
-                             // 2. 額外保險：排除名稱中含有 embedding 的模型
-                             return !m.name.toLowerCase().includes("embedding");
-                        })
-                        // 3. 排序：讓較新的模型 (通常版本號較大) 排在前面
+                        .filter(m => !m.name.toLowerCase().includes("embedding"))
                         .sort((a, b) => b.name.localeCompare(a.name))
                         .map(m => m.name.replace("models/", ""));
                 }
@@ -742,6 +883,9 @@
         
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
+        
+        // 儲存語音設定
+        saveVoiceSettings();
         
         showTransientStatus("設定已儲存"); 
         document.getElementById('settings-area').open = false;
@@ -883,30 +1027,33 @@
         };
 
         if (provider === 'gemini') {
-            // Gemini 專用格式
+            // Gemini URL
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            delete headers['Authorization']; // Gemini 用 URL param
+            delete headers['Authorization']; 
 
             const parts = [];
             if (fileBase64) {
                 parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             }
-            // Gemini 1.5 對搜尋的支援格式略有不同，此處主要實作一般文字/圖片
-            // 若需搜尋工具，需在 tools 中加入 google_search_retrieval
+            parts.push({ text: text });
+
+            // Gemini Tools (Search)
             let tools = [];
             if (searchEnabled) {
                 tools.push({ google_search_retrieval: {} });
             }
             
-            parts.push({ text: prompt + "\n\n用戶輸入:\n" + text });
-            
             body = {
+                // 使用原生 system_instruction (修正點 2)
+                system_instruction: {
+                    parts: [{ text: prompt }]
+                },
                 contents: [{ role: "user", parts: parts }]
             };
             if (searchEnabled) body.tools = tools;
 
         } else {
-            // OpenAI 兼容格式 (Mistral, OpenAI, Groq, OpenRouter, Perplexity)
+            // OpenAI Compatible Providers
             if (provider === 'mistral') url = "https://api.mistral.ai/v1/chat/completions";
             else if (provider === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
@@ -924,7 +1071,6 @@
             ];
 
             if (fileBase64) {
-                // OpenAI Vision 格式
                 messages[1].content = [
                     { type: "text", text: text },
                     { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
@@ -952,10 +1098,16 @@
 
         const data = await res.json();
         
-        // 解析回應
+        // 解析與錯誤處理
         if (provider === 'gemini') {
-            if (data.candidates && data.candidates[0].content) {
-                return data.candidates[0].content.parts.map(p => p.text).join('');
+            const candidate = data.candidates?.[0];
+            // 安全性檢查 (修正點 1)
+            if (!candidate) throw new Error("Gemini 未回傳候選結果");
+            if (candidate.finishReason !== "STOP") {
+                throw new Error(`Gemini 安全過濾或停止: ${candidate.finishReason}`);
+            }
+            if (candidate.content && candidate.content.parts) {
+                return candidate.content.parts.map(p => p.text).join('');
             }
         } else {
             if (data.choices && data.choices.length > 0) {
