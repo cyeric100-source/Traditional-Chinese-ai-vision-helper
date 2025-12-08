@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (OpenAI 更新版)</title>
+    <title>AI 視障助理 (Gemini 智慧篩選版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -180,7 +180,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (OpenAI 更新版)</h1>
+    <h1 class="app-title">AI 視障助理 (Gemini 智慧篩選版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -270,7 +270,6 @@
 </footer>
 
 <script>
-    // ★★★ 全域統一的預設指令 ★★★
     const DEFAULT_PROMPT = `# 角色設定 (Persona)
 你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
 
@@ -334,7 +333,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_mistral";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_gemini_fix";
 
     const PROVIDERS = {
         gemini: {
@@ -361,7 +360,6 @@
         openai: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "gpt-4o",
-            // ★★★ 修正: 允許 OpenAI 取得清單 ★★★
             canFetch: true, 
             models: ["gpt-4o", "gpt-4o-mini"],
             listUrl: "https://api.openai.com/v1/models"
@@ -636,8 +634,7 @@
 
         if (!conf.canFetch) return;
         
-        // 注意：OpenAI, Groq, Mistral, Gemini 都要 Key 才能更新
-        if ((pKey === 'gemini' || pKey === 'groq' || pKey === 'mistral' || pKey === 'openai') && !apiKey) {
+        if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
             showTransientStatus("請先輸入 API Key", "error");
             document.getElementById('api-key').focus();
             return;
@@ -666,18 +663,34 @@
                 const data = await res.json();
                 if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
             }
+            // ★★★ 修正: Gemini 智慧篩選器 ★★★
             else if (pKey === 'gemini') {
                 const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
                 const data = await res.json();
-                if (data.models) newModels = data.models.map(m => m.name.replace("models/", "")).filter(m => m.includes("gemini") && !m.includes("1.0"));
-                newModels = Array.from(new Set([...conf.models, ...newModels]));
+                if (data.models) {
+                    newModels = data.models
+                        .filter(m => {
+                            // 1. 必須支援 generateContent (聊天)
+                            const methods = m.supportedGenerationMethods || [];
+                            if (!methods.includes("generateContent")) return false;
+                            
+                            // 2. 排除 Embedding, AQA, 舊版 1.0
+                            const lowerName = m.name.toLowerCase();
+                            if (lowerName.includes("embedding")) return false;
+                            if (lowerName.includes("aqa")) return false;
+                            if (lowerName.includes("gemini-1.0")) return false;
+                            
+                            return true;
+                        })
+                        // 3. 排序 (讓新的版本排在前面)
+                        .sort((a, b) => b.name.localeCompare(a.name))
+                        .map(m => m.name.replace("models/", ""));
+                }
             }
-            // ★★★ 修正: 加入 OpenAI 的更新邏輯 ★★★
             else if (pKey === 'openai') {
                 const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
                 const data = await res.json();
                 if (data.data) {
-                    // 只保留 gpt 開頭的模型 (排除 dall-e, whisper 等)
                     newModels = data.data
                         .filter(m => m.id.startsWith('gpt'))
                         .sort((a, b) => (b.created || 0) - (a.created || 0))
@@ -690,9 +703,9 @@
                 
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
-                showTransientStatus(`更新成功`);
+                showTransientStatus(`更新成功 (${newModels.length} 個模型)`);
             } else {
-                showTransientStatus("未找到模型", "error");
+                showTransientStatus("未找到合適模型", "error");
             }
         } catch (e) {
             showTransientStatus(`更新失敗: ${e.message}`, "error");
