@@ -762,10 +762,8 @@
     }
 
     function showReadyStatus() {
-        const pKey = document.getElementById('provider-select').value;
-        const pName = pKey.charAt(0).toUpperCase() + pKey.slice(1); 
-        const model = currentActiveModelId || "Unknown";
-        updateStatusBar(`準備就緒: ${pName} (${model})`, 'ready');
+        // 修改：平時只顯示「準備就緒」，不顯示模型名稱
+        updateStatusBar("準備就緒", 'ready');
     }
 
     function showTransientStatus(msg, type = 'success') {
@@ -1010,7 +1008,9 @@
         
         saveVoiceSettings();
         
-        showTransientStatus("設定已儲存"); 
+        // 修改：儲存時才顯示詳細的提供者與模型名稱
+        const pName = pKey.charAt(0).toUpperCase() + pKey.slice(1);
+        showTransientStatus(`設定已儲存: ${pName} (${currentActiveModelId})`); 
         document.getElementById('settings-area').open = false;
     }
 
@@ -1118,15 +1118,74 @@
 
             const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
             
+            // 修改：確保在成功回應後，嚴格清空所有輸入狀態
             document.getElementById('user-input').value = "";      
             document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
             
             let displayMsg = userInput;
-            // 修改：確保顯示檔名與用戶輸入，並以換行分隔
-            if (fileData && selectedFile) {
-                displayMsg = `[📎 ${selectedFile.name}]\n${userInput}`;
+            if (fileData && fileData.length > 0) {
+                // 如果剛剛有上傳檔案，這裡確保歷史訊息能顯示檔名
+                // 但因為 selectedFile 已經被重置為 null，我們需要在重置前或利用閉包變數，
+                // 這裡簡單處理：若 response 成功，代表剛才是有檔案的，
+                // 但為了 UI 顯示正確，我們可以在 callAI 之前先存下檔名，或者接受這裡不顯示已重置的檔名。
+                // 不過為了符合「輸入問題之後顯示上載檔案名稱」的需求，
+                // 我們應該在重置前就處理好 displayMsg。
+            }
+            // 修正順序：應該先處理 displayMsg 再重置 selectedFile
+            // 但因為程式流程是 await callAI -> 重置 -> addMessage
+            // 我們需要重新調整一下順序
+            
+        } catch (err) {
+            // 錯誤處理...
+        } finally {
+            // 由於上面的 try block 結構被我註解打斷了，這裡提供修正後的完整 handleSubmit 邏輯
+        }
+    }
+    
+    // 重新定義完整的 handleSubmit 以確保邏輯正確
+    async function handleSubmit(e) {
+        e.preventDefault();
+        const inputField = document.getElementById('user-input');
+        const userInput = inputField.value.trim(); 
+        const pKey = document.getElementById('provider-select').value;
+        
+        if (!userInput && !selectedFile) {
+            showTransientStatus("請輸入內容", 'error'); return;
+        }
+
+        updateStatusBar("請稍後，正在處理...", 'busy');
+        
+        const submitBtn = document.getElementById('submit-btn');
+        submitBtn.disabled = true; submitBtn.innerText = "發送中";
+
+        const timeoutSec = parseInt(document.getElementById('timeout-setting').value) || 120;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
+
+        // 先暫存檔案資訊供顯示用
+        const currentFile = selectedFile;
+        const currentFileName = selectedFile ? selectedFile.name : null;
+
+        try {
+            let fileData = null;
+            if (currentFile) {
+                fileData = await readFileAsBase64(currentFile);
+            }
+
+            const response = await callAI(pKey, userInput, fileData, currentFile ? currentFile.type : null, controller.signal);
+            
+            // 修改：成功取得回應後，立即清空所有輸入
+            document.getElementById('user-input').value = "";      
+            document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+            document.getElementById('file-input').value = "";
+            selectedFile = null; 
+            
+            let displayMsg = userInput;
+            // 顯示邏輯
+            if (currentFileName) {
+                displayMsg = `[📎 ${currentFileName}]\n${userInput}`;
             }
             addMessage('user', displayMsg);
             
