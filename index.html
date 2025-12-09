@@ -1074,7 +1074,8 @@
             const fullContents = [...chatHistory, { role: "user", parts: currentParts }];
 
             // 強制開啟 Google Search 工具 (若模型支援)
-            let tools = [{ google_search_retrieval: {} }];
+            // 修改點：將 google_search_retrieval 更新為 google_search
+            let tools = [{ google_search: {} }];
             
             body = {
                 system_instruction: { parts: [{ text: prompt }] },
