@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (高精度 OCR 版)</title>
+    <title>AI 視障助理 (AI 視覺閱讀版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
     <!-- 引入 PDF.js (用於解析 PDF) -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-    <!-- 引入 Tesseract.js (用於純前端 OCR) -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <style>
         :root {
@@ -176,7 +174,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (高精度 OCR 版)</h1>
+    <h1 class="app-title">AI 視障助理 (AI 視覺閱讀版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -277,7 +275,7 @@
             <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入" aria-label="語音輸入">🎤</button>
             
             <!-- 文字輸入框 -->
-            <textarea id="user-input" placeholder="輸入訊息... (上傳 PDF 將自動顯示文字)" accesskey="i" autocomplete="off" rows="3"></textarea>
+            <textarea id="user-input" placeholder="輸入訊息... (上傳 PDF 將由 AI 直接閱讀)" accesskey="i" autocomplete="off" rows="3"></textarea>
             
             <!-- 發送按鈕 -->
             <button type="submit" id="submit-btn" style="width: 80px; height: 80px; margin:0;">傳送</button>
@@ -286,7 +284,7 @@
 </footer>
 
 <script>
-    // --- OCR 與 PDF 初始化 ---
+    // --- PDF 初始化 ---
     // 設定 PDF.js Worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
@@ -298,7 +296,7 @@
 2. **無障礙格式**：善用 \`#\` (標題)、\`-\` (清單)。禁止使用 \`[ ]\` 或 \`{ }\`。
 3. **內容風格**：精簡洗鍊 (Concise)，重點置前。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_ocr_v3_high_res";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_ai_vision_ocr";
 
     const PROVIDERS = {
         gemini: {
@@ -310,9 +308,9 @@
         },
         mistral: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "mistral-large-latest",
+            defaultModel: "pixtral-large-latest",
             canFetch: true,
-            models: ["mistral-large-latest", "pixtral-large-latest", "mistral-small-latest"],
+            models: ["pixtral-large-latest", "pixtral-12b-latest"],
             listUrl: "https://api.mistral.ai/v1/models"
         },
         openrouter: {
@@ -333,7 +331,7 @@
             prompt: DEFAULT_PROMPT,
             defaultModel: "llama-3.2-90b-vision-preview", 
             canFetch: true, 
-            models: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile"], 
+            models: ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview"], 
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         perplexity: {
@@ -380,112 +378,136 @@
         initPasteImage();
     });
 
-    // --- 新增：影像二值化處理 (去除雜訊核心) ---
-    function preprocessCanvas(canvas) {
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        
-        // 閥值設定：低於 180 (淺灰) 就變黑，高於則變白
-        // 這個值可以濾除大部分掃描檔的灰底噪音
-        const threshold = 180; 
-
-        for (let i = 0; i < data.length; i += 4) {
-            // 計算灰階值 (人眼加權平均)
-            const avg = (0.2126 * data[i]) + (0.7152 * data[i + 1]) + (0.0722 * data[i + 2]);
-            
-            // 二值化邏輯：非黑即白
-            // 注意：文字通常是黑的 (數值低)，背景是白的 (數值高)
-            // 所以如果 avg < threshold (夠黑)，設為 0 (黑)，否則 255 (白)
-            const val = avg < threshold ? 0 : 255;
-            
-            data[i] = val;     // R
-            data[i + 1] = val; // G
-            data[i + 2] = val; // B
-            // Alpha (data[i+3]) 維持不變
-        }
-        
-        ctx.putImageData(imageData, 0, 0);
-        return canvas;
-    }
-
-    // --- PDF OCR 核心功能 (含修正邏輯) ---
-    async function runPDFOCR(file) {
-        showTransientStatus("正在讀取 PDF 文件...", "busy");
+    // --- 新核心：使用 AI Vision 進行 PDF 閱讀 ---
+    async function runAIVisionOCR(file) {
+        showTransientStatus("正在解析 PDF 頁面...", "busy");
         
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
             const numPages = pdf.numPages;
-            let fullText = "";
+            const images = [];
 
-            updateStatusBar(`正在初始化高精度模型 (首次需下載約 15MB)...`, "busy");
+            // 限制：一次最多處理 5 頁，避免 AI Token 爆炸
+            const maxPages = 5;
+            const processPages = Math.min(numPages, maxPages);
 
-            // --- 核心修改：使用 tessdata_best 高精度模型 ---
-            // langPath 指向 best 模型的 Repo
-            const worker = await Tesseract.createWorker('chi_tra+eng', 1, {
-                langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
-                gzip: false, // best repo 通常是不壓縮的
-                logger: m => {
-                    if (m.status === 'recognizing text') {
-                        updateStatusBar(`OCR 辨識中: ${Math.round(m.progress * 100)}%`, "busy");
-                    } else if (m.status === 'loading tesseract core') {
-                        updateStatusBar(`載入 OCR 核心...`, "busy");
-                    } else {
-                        updateStatusBar(`OCR 狀態: ${m.status}`, "busy");
-                    }
-                }
-            });
-            
-            // 設定白名單 (可選，這裡先不嚴格限制以免濾掉需要的標點，但二值化已經解決大部分問題)
-            // await worker.setParameters({
-            //     tessedit_char_whitelist: '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,:;()[]+-\u4e00-\u9fa5'
-            // });
-
-            for (let i = 1; i <= numPages; i++) {
-                updateStatusBar(`正在處理第 ${i} / ${numPages} 頁 (高解析渲染)...`, "busy");
-                
+            for (let i = 1; i <= processPages; i++) {
+                updateStatusBar(`正在將第 ${i} / ${numPages} 頁轉換為高解析影像...`, "busy");
                 const page = await pdf.getPage(i);
-                
-                // --- 核心修改：大幅提升解析度 ---
-                // 手機提升至 2.5，電腦提升至 3.5 (舊版為 1.5/2.0)
-                // 這對繁體中文辨識至關重要
-                const scale = window.innerWidth < 600 ? 2.5 : 3.5;
-                
-                const viewport = page.getViewport({ scale: scale });
-
+                // 使用較高解析度讓 AI 看得更清楚
+                const viewport = page.getViewport({ scale: 2.0 });
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
 
                 await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-                // --- 核心修改：執行二值化預處理 ---
-                updateStatusBar(`正在去除第 ${i} 頁雜訊...`, "busy");
-                const processedCanvas = preprocessCanvas(canvas);
-
-                // 進行辨識
-                updateStatusBar(`正在辨識第 ${i} 頁文字...`, "busy");
-                const { data: { text } } = await worker.recognize(processedCanvas);
                 
-                // 自動修正邏輯
-                let cleaned = text;
-                cleaned = cleaned.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2");
-                cleaned = cleaned.replace(/([\u4e00-\u9fa5])\s*[\r\n]+\s*([\u4e00-\u9fa5])/g, "$1$2");
-                cleaned = cleaned.replace(/\n\s*\n\s*\n/g, "\n\n");
-                
-                fullText += `### 第 ${i} 頁\n${cleaned}\n\n`;
+                // 轉為 Base64 (去除 data:image/png;base64, 前綴)
+                const base64 = canvas.toDataURL('image/png').split(',')[1];
+                images.push({ page: i, data: base64 });
             }
 
-            await worker.terminate();
-            showTransientStatus("高精度 OCR 完成！", "success");
-            return fullText;
+            if (numPages > maxPages) {
+                showTransientStatus(`提示：文件過長，僅讀取前 ${maxPages} 頁。`, "info");
+            }
+
+            // 呼叫 AI 進行視覺辨識
+            updateStatusBar(`正在傳送至 AI 進行精準辨識...`, "busy");
+            const pKey = document.getElementById('provider-select').value;
+            const apiKey = document.getElementById('api-key').value;
+            
+            // 專用 Prompt
+            const ocrPrompt = `請作為一個高精準度的 OCR 系統。請仔細閱讀以上 ${images.length} 張文件圖片。
+            請將圖片中的內容**逐字抄錄**為繁體中文。
+            
+            格式要求：
+            1. 遇到表格，請盡量用 Markdown 表格還原。
+            2. 遇到標題，請用 Markdown # 標示。
+            3. 不要加入你的個人評論，只要文件內容。
+            4. 若圖片模糊或有雜訊，請根據上下文自動修正為正確的詞彙，不要輸出亂碼。`;
+
+            // 使用 callAI 函式 (需微調以支援多圖)
+            return await callAIMultiImage(pKey, ocrPrompt, images);
 
         } catch (error) {
             console.error(error);
-            showTransientStatus(`OCR 失敗: ${error.message}`, "error");
-            throw new Error("無法處理 PDF，請確認檔案是否損壞。");
+            showTransientStatus(`AI 辨識失敗: ${error.message}`, "error");
+            throw new Error("無法處理 PDF，請確認 API Key 是否正確且支援 Vision 模型。");
+        }
+    }
+
+    // --- 支援多圖的 AI 呼叫函式 ---
+    async function callAIMultiImage(provider, text, images) {
+        const apiKey = document.getElementById('api-key').value;
+        const prompt = document.getElementById('system-prompt').value; // 這裡我們通常忽略 system prompt，專注於 OCR
+        let model = currentActiveModelId;
+
+        if (!apiKey) throw new Error("請先輸入 API Key");
+
+        // Gemini 支援多圖
+        if (provider === 'gemini') {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const parts = [];
+            // 加入圖片
+            images.forEach(img => {
+                parts.push({ inline_data: { mime_type: 'image/png', data: img.data } });
+            });
+            // 加入文字指令
+            parts.push({ text: text });
+
+            const body = {
+                contents: [{ role: "user", parts: parts }]
+            };
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!res.ok) throw new Error(`Gemini Error: ${res.status}`);
+            const data = await res.json();
+            return data.candidates?.[0]?.content?.parts.map(p => p.text).join('') || "無內容";
+        } 
+        
+        // OpenAI / Groq / OpenRouter 支援多圖 (Vision)
+        else {
+            let url = "";
+            let headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
+            
+            if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
+            else if (provider === 'openrouter') {
+                url = "https://openrouter.ai/api/v1/chat/completions";
+                headers['HTTP-Referer'] = window.location.href;
+            }
+            else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
+            else if (provider === 'mistral') url = "https://api.mistral.ai/v1/chat/completions";
+
+            const content = [{ type: "text", text: text }];
+            images.forEach(img => {
+                content.push({
+                    type: "image_url",
+                    image_url: { url: `data:image/png;base64,${img.data}` }
+                });
+            });
+
+            const body = {
+                model: model,
+                messages: [{ role: "user", content: content }],
+                temperature: 0.1 // OCR 需要低創造性
+            };
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(body)
+            });
+
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            const data = await res.json();
+            return data.choices?.[0]?.message.content || "無內容";
         }
     }
 
@@ -708,13 +730,13 @@
             };
             div.appendChild(miniCopyBtn);
         } else if (role === 'ocr') {
-            header.innerText = '📄 PDF 辨識與自動修正結果 (高精度)：';
+            header.innerText = '👁️ AI 視覺閱讀結果 (精準)：';
             contentDiv.innerText = content; 
             const miniCopyBtn = document.createElement('button');
             miniCopyBtn.className = 'mini-copy-btn';
             miniCopyBtn.innerText = '📄 複製內容';
             miniCopyBtn.onclick = function() {
-                navigator.clipboard.writeText(contentDiv.innerText).then(() => showTransientStatus("已複製 OCR 內容"));
+                navigator.clipboard.writeText(contentDiv.innerText).then(() => showTransientStatus("已複製內容"));
             };
             div.appendChild(miniCopyBtn);
         } else {
@@ -892,15 +914,19 @@
         try {
             let fileData = null;
 
+            // --- 核心邏輯修改：使用 AI Vision 取代 Tesseract ---
             if (selectedFile && selectedFile.type === 'application/pdf') {
                 addMessage('user', `[已上傳 PDF] ${selectedFile.name}`);
                 
-                let ocrText = await runPDFOCR(selectedFile);
+                // 1. 執行 AI 視覺閱讀
+                let ocrText = await runAIVisionOCR(selectedFile);
                 
+                // 2. 顯示結果
                 const ocrMsgDiv = addMessage('ocr', ocrText);
                 ocrMsgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-                const contextMsg = `[系統註記：使用者上傳了 PDF，以下是辨識並自動修正後的內容]\n\n${ocrText}`;
+                // 3. 寫入歷史
+                const contextMsg = `[系統註記：使用者上傳了 PDF，以下是 AI 視覺閱讀後的精準內容]\n\n${ocrText}`;
                 
                 if (pKey === 'gemini') {
                      chatHistory.push({ role: "user", parts: [{ text: contextMsg }] });
