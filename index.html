@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (PDF 閱讀版)</title>
+    <title>AI 視障助理 (高精度 OCR 版)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
@@ -16,10 +16,10 @@
         :root {
             --bg-color: #000000;
             --text-color: #FFFFFF;
-            --accent-color: #FFFF00;      /* 黃色高亮 */
-            --user-header-color: #0088ff; /* 用戶標題色 */
-            --ai-header-color: #FFFF00;   /* AI 標題色 */
-            --ocr-header-color: #00ff00;  /* OCR 結果標題色 */
+            --accent-color: #FFFF00;
+            --user-header-color: #0088ff;
+            --ai-header-color: #FFFF00;
+            --ocr-header-color: #00ff00;
             --border-color: #555;
             --input-bg: #1A1A1A;
             --button-bg: #FFFF00;
@@ -114,7 +114,6 @@
         .message.assistant { border-left-color: var(--ai-header-color); background: #1a1a0a; }
         .message.assistant h1.msg-heading { color: var(--ai-header-color); }
 
-        /* 新增：OCR 結果專用樣式 */
         .message.ocr { border-left-color: var(--ocr-header-color); background: #001a00; }
         .message.ocr h1.msg-heading { color: var(--ocr-header-color); }
 
@@ -177,7 +176,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (PDF 閱讀版)</h1>
+    <h1 class="app-title">AI 視障助理 (高精度 OCR 版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -299,7 +298,7 @@
 2. **無障礙格式**：善用 \`#\` (標題)、\`-\` (清單)。禁止使用 \`[ ]\` 或 \`{ }\`。
 3. **內容風格**：精簡洗鍊 (Concise)，重點置前。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_ocr_v2";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_ocr_v3_high_res";
 
     const PROVIDERS = {
         gemini: {
@@ -381,6 +380,35 @@
         initPasteImage();
     });
 
+    // --- 新增：影像二值化處理 (去除雜訊核心) ---
+    function preprocessCanvas(canvas) {
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // 閥值設定：低於 180 (淺灰) 就變黑，高於則變白
+        // 這個值可以濾除大部分掃描檔的灰底噪音
+        const threshold = 180; 
+
+        for (let i = 0; i < data.length; i += 4) {
+            // 計算灰階值 (人眼加權平均)
+            const avg = (0.2126 * data[i]) + (0.7152 * data[i + 1]) + (0.0722 * data[i + 2]);
+            
+            // 二值化邏輯：非黑即白
+            // 注意：文字通常是黑的 (數值低)，背景是白的 (數值高)
+            // 所以如果 avg < threshold (夠黑)，設為 0 (黑)，否則 255 (白)
+            const val = avg < threshold ? 0 : 255;
+            
+            data[i] = val;     // R
+            data[i + 1] = val; // G
+            data[i + 2] = val; // B
+            // Alpha (data[i+3]) 維持不變
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        return canvas;
+    }
+
     // --- PDF OCR 核心功能 (含修正邏輯) ---
     async function runPDFOCR(file) {
         showTransientStatus("正在讀取 PDF 文件...", "busy");
@@ -391,17 +419,39 @@
             const numPages = pdf.numPages;
             let fullText = "";
 
-            updateStatusBar(`OCR 引擎啟動中 (首次需下載中文模型)...`, "busy");
+            updateStatusBar(`正在初始化高精度模型 (首次需下載約 15MB)...`, "busy");
 
-            // 建立 Worker，設定語言為繁體中文+英文
-            const worker = await Tesseract.createWorker('chi_tra+eng');
+            // --- 核心修改：使用 tessdata_best 高精度模型 ---
+            // langPath 指向 best 模型的 Repo
+            const worker = await Tesseract.createWorker('chi_tra+eng', 1, {
+                langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
+                gzip: false, // best repo 通常是不壓縮的
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        updateStatusBar(`OCR 辨識中: ${Math.round(m.progress * 100)}%`, "busy");
+                    } else if (m.status === 'loading tesseract core') {
+                        updateStatusBar(`載入 OCR 核心...`, "busy");
+                    } else {
+                        updateStatusBar(`OCR 狀態: ${m.status}`, "busy");
+                    }
+                }
+            });
+            
+            // 設定白名單 (可選，這裡先不嚴格限制以免濾掉需要的標點，但二值化已經解決大部分問題)
+            // await worker.setParameters({
+            //     tessedit_char_whitelist: '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,:;()[]+-\u4e00-\u9fa5'
+            // });
 
             for (let i = 1; i <= numPages; i++) {
-                updateStatusBar(`正在辨識第 ${i} / ${numPages} 頁...`, "busy");
+                updateStatusBar(`正在處理第 ${i} / ${numPages} 頁 (高解析渲染)...`, "busy");
                 
                 const page = await pdf.getPage(i);
-                // 手機上設為 1.5，電腦設為 2.0
-                const scale = window.innerWidth < 600 ? 1.5 : 2.0;
+                
+                // --- 核心修改：大幅提升解析度 ---
+                // 手機提升至 2.5，電腦提升至 3.5 (舊版為 1.5/2.0)
+                // 這對繁體中文辨識至關重要
+                const scale = window.innerWidth < 600 ? 2.5 : 3.5;
+                
                 const viewport = page.getViewport({ scale: scale });
 
                 const canvas = document.createElement('canvas');
@@ -411,28 +461,25 @@
 
                 await page.render({ canvasContext: context, viewport: viewport }).promise;
 
+                // --- 核心修改：執行二值化預處理 ---
+                updateStatusBar(`正在去除第 ${i} 頁雜訊...`, "busy");
+                const processedCanvas = preprocessCanvas(canvas);
+
                 // 進行辨識
-                const { data: { text } } = await worker.recognize(canvas);
+                updateStatusBar(`正在辨識第 ${i} 頁文字...`, "busy");
+                const { data: { text } } = await worker.recognize(processedCanvas);
                 
-                // --- 自動修正邏輯 (Text Correction) ---
+                // 自動修正邏輯
                 let cleaned = text;
-
-                // 1. 去除中文字元之間的空格 (Tesseract 常見問題)
-                // 邏輯：如果一個中文字後面跟著空格，再後面又是中文字，把空格去掉
                 cleaned = cleaned.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2");
-
-                // 2. 修復被錯誤斷開的行
-                // 邏輯：如果行尾是中文字，且下一行開頭是中文字，把換行符號拿掉
                 cleaned = cleaned.replace(/([\u4e00-\u9fa5])\s*[\r\n]+\s*([\u4e00-\u9fa5])/g, "$1$2");
-
-                // 3. 規範化多餘的空行 (超過兩個換行變成兩個)
                 cleaned = cleaned.replace(/\n\s*\n\s*\n/g, "\n\n");
                 
                 fullText += `### 第 ${i} 頁\n${cleaned}\n\n`;
             }
 
             await worker.terminate();
-            showTransientStatus("OCR 辨識完成！", "success");
+            showTransientStatus("高精度 OCR 完成！", "success");
             return fullText;
 
         } catch (error) {
@@ -661,10 +708,8 @@
             };
             div.appendChild(miniCopyBtn);
         } else if (role === 'ocr') {
-            // 新增 OCR 專用顯示
-            header.innerText = '📄 PDF 辨識與自動修正結果：';
-            contentDiv.innerText = content; // 顯示純文字
-            // 讓使用者也可以複製 OCR 結果
+            header.innerText = '📄 PDF 辨識與自動修正結果 (高精度)：';
+            contentDiv.innerText = content; 
             const miniCopyBtn = document.createElement('button');
             miniCopyBtn.className = 'mini-copy-btn';
             miniCopyBtn.innerText = '📄 複製內容';
@@ -835,7 +880,6 @@
         let userInput = inputField.value.trim(); 
         const pKey = document.getElementById('provider-select').value;
         
-        // 若沒有輸入文字也沒有檔案，報錯
         if (!userInput && !selectedFile) { showTransientStatus("請輸入內容", 'error'); return; }
 
         const submitBtn = document.getElementById('submit-btn');
@@ -848,18 +892,14 @@
         try {
             let fileData = null;
 
-            // --- 核心邏輯修改：優先處理 PDF OCR 並顯示 ---
             if (selectedFile && selectedFile.type === 'application/pdf') {
                 addMessage('user', `[已上傳 PDF] ${selectedFile.name}`);
                 
-                // 執行 OCR 並且獲取修正後的文字
                 let ocrText = await runPDFOCR(selectedFile);
                 
-                // 1. 直接顯示 OCR 結果給使用者
                 const ocrMsgDiv = addMessage('ocr', ocrText);
                 ocrMsgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-                // 2. 將 OCR 結果寫入歷史紀錄，讓 AI 知道這件事
                 const contextMsg = `[系統註記：使用者上傳了 PDF，以下是辨識並自動修正後的內容]\n\n${ocrText}`;
                 
                 if (pKey === 'gemini') {
@@ -870,26 +910,20 @@
                      chatHistory.push({ role: "assistant", content: "已讀取 PDF 內容。" });
                 }
 
-                // 3. 清除檔案狀態 (因為已經轉成文字了)
                 selectedFile = null;
                 document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
                 document.getElementById('file-input').value = "";
 
-                // 4. 如果使用者原本沒有輸入問題 (只是想看 PDF)，那就停在這裡，不呼叫 AI
                 if (!userInput) {
                     showReadyStatus();
-                    return; // 結束函式
+                    return; 
                 }
-                
-                // 如果有輸入問題 (例如 "摘要這份文件")，程式會繼續往下執行 callAI
             }
 
-            // --- 處理一般圖片 ---
             if (selectedFile) {
                 fileData = await readFileAsBase64(selectedFile);
                 addMessage('user', `[已上傳圖片] ${selectedFile.name}\n${userInput}`);
             } else if (userInput) {
-                // 如果是純文字 (或剛剛 PDF OCR 完接著問問題)
                 addMessage('user', userInput);
             }
             
@@ -897,7 +931,6 @@
             const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
             
             document.getElementById('user-input').value = "";      
-            // 再次確保清空 (如果是圖片上傳的情況)
             document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
