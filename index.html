@@ -252,6 +252,12 @@
             <div id="custom-model-wrapper" class="hidden">
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
             </div>
+            
+            <!-- Enter 鍵設定 -->
+            <label class="check-btn" style="flex:none; width:auto; margin-bottom: 10px;">
+                <input type="checkbox" id="enter-to-send">
+                <span>按 Enter 鍵傳送 (取消勾選則 Enter 為換行)</span>
+            </label>
 
             <!-- 語音設定區塊 -->
             <div class="settings-subsection">
@@ -292,10 +298,10 @@
                 📋 複製 (Alt+C)
             </button>
             <button type="button" id="export-txt-btn" class="secondary hidden" onclick="exportChat('txt')" accesskey="t" style="flex:1;">
-                📥 TXT (Alt+T)
+                📥 匯出 TXT (Alt+T)
             </button>
             <button type="button" id="export-html-btn" class="secondary hidden" onclick="exportChat('html')" accesskey="h" style="flex:1;">
-                🌐 HTML (Alt+H)
+                🌐 匯出 HTML (Alt+H)
             </button>
         </div>
     </main>
@@ -476,6 +482,12 @@
         const savedVoiceKey = localStorage.getItem('voice_api_key');
         if (savedVoiceKey) document.getElementById('voice-api-key').value = savedVoiceKey;
 
+        // 還原 Enter 鍵設定
+        const savedEnter = localStorage.getItem('enter_to_send');
+        if (savedEnter === 'true') {
+            document.getElementById('enter-to-send').checked = true;
+        }
+
         if (savedProvider) {
             document.getElementById('provider-select').value = savedProvider;
             settingsDetails.open = false; 
@@ -488,6 +500,7 @@
         initVoiceSystem();
         initPasteImage();
         initDragAndDrop();
+        initEnterKey();
     });
 
     // --- 重置對話功能 ---
@@ -690,7 +703,7 @@
         });
     }
 
-    // 新增：拖放功能支援
+    // 拖放功能支援
     function initDragAndDrop() {
         const dropZone = document.getElementById('user-input');
         
@@ -717,6 +730,20 @@
             const files = dt.files;
             if (files.length > 0) {
                 handleFileSelect(files[0]);
+            }
+        });
+    }
+
+    // 初始化 Enter 鍵傳送
+    function initEnterKey() {
+        const input = document.getElementById('user-input');
+        input.addEventListener('keydown', (e) => {
+            const enterToSend = document.getElementById('enter-to-send').checked;
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                if (enterToSend) {
+                    e.preventDefault();
+                    document.getElementById('submit-btn').click();
+                }
             }
         });
     }
@@ -976,6 +1003,7 @@
         
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
+        localStorage.setItem('enter_to_send', document.getElementById('enter-to-send').checked);
         
         saveVoiceSettings();
         
@@ -1006,7 +1034,7 @@
         navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部歷史紀錄"));
     }
 
-    // 新增：匯出對話功能
+    // 匯出對話功能
     function exportChat(format) {
         const output = document.getElementById('chat-output');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1051,7 +1079,6 @@
         }
 
         if (selectedFile) {
-            // 修改：省略檔名，只提示已加入影像
             document.getElementById('upload-btn').innerText = `✅ 已加入影像`;
             showTransientStatus(`已加入影像`);
             
@@ -1094,8 +1121,8 @@
             selectedFile = null; 
             
             let displayMsg = userInput;
-            // 修改：省略檔名，使用圖示
-            if (fileData) displayMsg = `[📎] ${displayMsg}`;
+            // 修改：恢復顯示檔名
+            if (fileData && selectedFile) displayMsg = `[📎 ${selectedFile.name}] ${displayMsg}`;
             addMessage('user', displayMsg);
             
             const aiMsgDiv = addMessage('assistant', response);
@@ -1114,7 +1141,7 @@
             }
             showReadyStatus();
             
-            // 新增：成功震動 (短震 50ms)
+            // 成功震動 (短震 50ms)
             if (navigator.vibrate) navigator.vibrate(50);
 
         } catch (err) {
@@ -1134,7 +1161,7 @@
             }
             showReadyStatus();
 
-            // 新增：錯誤震動 (長震 500ms)
+            // 錯誤震動 (長震 500ms)
             if (navigator.vibrate) navigator.vibrate(500);
 
         } finally {
