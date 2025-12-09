@@ -253,9 +253,9 @@
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
             </div>
             
-            <!-- Enter 鍵設定 -->
+            <!-- Enter 鍵設定 (預設勾選) -->
             <label class="check-btn" style="flex:none; width:auto; margin-bottom: 10px;">
-                <input type="checkbox" id="enter-to-send">
+                <input type="checkbox" id="enter-to-send" checked>
                 <span>按 Enter 鍵傳送 (取消勾選則 Enter 為換行)</span>
             </label>
 
@@ -482,10 +482,13 @@
         const savedVoiceKey = localStorage.getItem('voice_api_key');
         if (savedVoiceKey) document.getElementById('voice-api-key').value = savedVoiceKey;
 
-        // 還原 Enter 鍵設定
+        // 還原 Enter 鍵設定 (預設為 true/Checked)
         const savedEnter = localStorage.getItem('enter_to_send');
-        if (savedEnter === 'true') {
+        // 若為 null (首次使用) 或 'true'，則勾選；否則取消勾選
+        if (savedEnter === null || savedEnter === 'true') {
             document.getElementById('enter-to-send').checked = true;
+        } else {
+            document.getElementById('enter-to-send').checked = false;
         }
 
         if (savedProvider) {
@@ -1121,8 +1124,10 @@
             selectedFile = null; 
             
             let displayMsg = userInput;
-            // 修改：恢復顯示檔名
-            if (fileData && selectedFile) displayMsg = `[📎 ${selectedFile.name}] ${displayMsg}`;
+            // 修改：確保顯示檔名與用戶輸入，並以換行分隔
+            if (fileData && selectedFile) {
+                displayMsg = `[📎 ${selectedFile.name}]\n${userInput}`;
+            }
             addMessage('user', displayMsg);
             
             const aiMsgDiv = addMessage('assistant', response);
