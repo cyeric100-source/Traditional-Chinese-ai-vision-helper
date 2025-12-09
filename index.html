@@ -35,7 +35,7 @@
             max-width: 900px;
             margin: 0 auto;
             /* 底部預留更多空間給長輸入框 */
-            padding: 10px 10px 400px 10px;
+            padding: 10px 10px 450px 10px;
         }
 
         .app-title { 
@@ -179,6 +179,11 @@
             resize: vertical;  /* 允許使用者調整 */
             overflow-y: auto;
             flex: 1; /* 佔滿剩餘空間 */
+            transition: border-color 0.2s;
+        }
+        #user-input.dragover {
+            border-color: var(--accent-color) !important;
+            background-color: #222;
         }
 
         /* 狀態列 */
@@ -204,6 +209,10 @@
             border: 1px solid #444; padding: 10px; border-radius: 6px; margin: 10px 0; background: #222;
         }
         .settings-subsection h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: var(--accent-color); }
+
+        /* 匯出按鈕區 */
+        .export-actions { margin-bottom: 20px; display: flex; gap: 10px; }
+        .export-actions button { margin-top: 0; font-size: 1rem; padding: 8px; }
     </style>
 </head>
 <body>
@@ -277,9 +286,18 @@
     <!-- 結果區 -->
     <main role="main">
         <div id="chat-output" class="message-area"></div>
-        <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="width:100%; margin-bottom: 20px;">
-            📋 複製全部對話 (Alt+C)
-        </button>
+        
+        <div class="export-actions">
+            <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="flex:1;">
+                📋 複製 (Alt+C)
+            </button>
+            <button type="button" id="export-txt-btn" class="secondary hidden" onclick="exportChat('txt')" accesskey="t" style="flex:1;">
+                📥 TXT (Alt+T)
+            </button>
+            <button type="button" id="export-html-btn" class="secondary hidden" onclick="exportChat('html')" accesskey="h" style="flex:1;">
+                🌐 HTML (Alt+H)
+            </button>
+        </div>
     </main>
 </div>
 
@@ -300,23 +318,23 @@
                 🗑️ 新對話 (Alt+N)
             </button>
 
-            <!-- 暫停傳送開關 (移動至此) -->
+            <!-- 暫停傳送開關 -->
             <label class="check-btn" style="flex:1;">
-                <input type="checkbox" id="pause-send">
-                <span>暫停傳送</span>
+                <input type="checkbox" id="pause-send" accesskey="p">
+                <span>暫停傳送 (Alt+P)</span>
             </label>
         </div>
         
         <!-- 第二排：輸入與發送 -->
         <div class="row">
             <!-- 語音輸入按鈕 -->
-            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入" aria-label="語音輸入">🎤</button>
+            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" accesskey="v" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入 (Alt+V)" aria-label="語音輸入 (Alt+V)">🎤</button>
             
-            <!-- 文字輸入框 -->
-            <textarea id="user-input" placeholder="輸入訊息... (可貼上截圖 Ctrl+V)" accesskey="i" autocomplete="off" rows="3"></textarea>
+            <!-- 文字輸入框 (支援 DnD) -->
+            <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" accesskey="i" autocomplete="off" rows="3"></textarea>
             
             <!-- 發送按鈕 -->
-            <button type="submit" id="submit-btn" style="width: 80px; height: 80px; margin:0;">傳送</button>
+            <button type="submit" id="submit-btn" accesskey="k" style="width: 80px; height: 80px; margin:0;" title="發送 (Alt+K)">傳送</button>
         </div>
     </form>
 </footer>
@@ -469,6 +487,7 @@
         handleProviderChange(false); 
         initVoiceSystem();
         initPasteImage();
+        initDragAndDrop();
     });
 
     // --- 重置對話功能 ---
@@ -480,6 +499,7 @@
         document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
         document.getElementById('file-input').value = "";
         
+        toggleExportButtons(false);
         showTransientStatus("對話紀錄已清除 (新對話)", "info");
     }
 
@@ -662,14 +682,41 @@
             for (let i = 0; i < items.length; i++) {
                 if (items[i].kind === 'file' && items[i].type.startsWith('image/')) {
                     const blob = items[i].getAsFile();
-                    selectedFile = blob;
-                    
-                    document.getElementById('upload-btn').innerText = `✅ 截圖/圖片`;
-                    showTransientStatus(`已貼上圖片: ${blob.name || 'image.png'}`);
-                    
+                    handleFileSelect(blob);
                     e.preventDefault(); 
                     return;
                 }
+            }
+        });
+    }
+
+    // 新增：拖放功能支援
+    function initDragAndDrop() {
+        const dropZone = document.getElementById('user-input');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        dropZone.addEventListener('dragover', () => {
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            dropZone.classList.remove('dragover');
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
             }
         });
     }
@@ -721,6 +768,7 @@
             header.innerText = '回應結果：';
             contentDiv.innerHTML = marked.parse(content);
             document.getElementById('copy-btn').classList.remove('hidden');
+            toggleExportButtons(true);
             
             // 單則複製按鈕
             const miniCopyBtn = document.createElement('button');
@@ -745,6 +793,14 @@
         output.appendChild(div);
         
         return div; 
+    }
+
+    function toggleExportButtons(show) {
+        const list = ['copy-btn', 'export-txt-btn', 'export-html-btn'];
+        list.forEach(id => {
+            if(show) document.getElementById(id).classList.remove('hidden');
+            else document.getElementById(id).classList.add('hidden');
+        });
     }
 
     function handleProviderChange(save = true) {
@@ -941,7 +997,7 @@
     }
 
     function showHelp() {
-        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+N: 新對話\nAlt+I: 輸入\nAlt+C: 複製全部\nCtrl+V: 貼上圖片");
+        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+N: 新對話\nAlt+K: 傳送\nAlt+V: 語音\nAlt+T/H: 匯出\nAlt+P: 暫停傳送");
     }
 
     function copyResult() {
@@ -950,12 +1006,55 @@
         navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部歷史紀錄"));
     }
 
-    function handleFileSelect() {
-        const fileInput = document.getElementById('file-input');
-        if (fileInput.files.length > 0) {
-            selectedFile = fileInput.files[0];
-            document.getElementById('upload-btn').innerText = `✅ ${selectedFile.name}`;
-            showTransientStatus(`已選擇: ${selectedFile.name}`);
+    // 新增：匯出對話功能
+    function exportChat(format) {
+        const output = document.getElementById('chat-output');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        let content = "";
+        let mimeType = "";
+        let extension = "";
+
+        if (format === 'html') {
+            const css = document.querySelector('style').innerHTML;
+            content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>對話紀錄 ${timestamp}</title><style>${css} body { padding: 20px; }</style></head><body><div class="container"><h1 class="app-title">對話紀錄備份</h1><div class="message-area">${output.innerHTML}</div></div></body></html>`;
+            mimeType = "text/html";
+            extension = "html";
+        } else {
+            content = output.innerText;
+            mimeType = "text/plain";
+            extension = "txt";
+        }
+
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-export-${timestamp}.${extension}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showTransientStatus(`已匯出 ${extension.toUpperCase()} 檔案`);
+    }
+
+    function handleFileSelect(fileObj) {
+        // 若直接傳入檔案物件 (DnD 或 Paste)
+        if (fileObj) {
+            selectedFile = fileObj;
+        } else {
+            // 從 Input 讀取
+            const fileInput = document.getElementById('file-input');
+            if (fileInput.files.length > 0) {
+                selectedFile = fileInput.files[0];
+            }
+        }
+
+        if (selectedFile) {
+            // 修改：省略檔名，只提示已加入影像
+            document.getElementById('upload-btn').innerText = `✅ 已加入影像`;
+            showTransientStatus(`已加入影像`);
+            
             if (!document.getElementById('pause-send').checked) {
                 setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
             }
@@ -995,7 +1094,8 @@
             selectedFile = null; 
             
             let displayMsg = userInput;
-            if (fileData) displayMsg = `[已上傳圖片/檔案] ${displayMsg}`;
+            // 修改：省略檔名，使用圖示
+            if (fileData) displayMsg = `[📎] ${displayMsg}`;
             addMessage('user', displayMsg);
             
             const aiMsgDiv = addMessage('assistant', response);
@@ -1013,6 +1113,9 @@
                 setTimeout(() => aiMsgDiv.focus(), 100);
             }
             showReadyStatus();
+            
+            // 新增：成功震動 (短震 50ms)
+            if (navigator.vibrate) navigator.vibrate(50);
 
         } catch (err) {
             addMessage('user', userInput);
@@ -1030,6 +1133,9 @@
                 setTimeout(() => errorDiv.focus(), 100);
             }
             showReadyStatus();
+
+            // 新增：錯誤震動 (長震 500ms)
+            if (navigator.vibrate) navigator.vibrate(500);
 
         } finally {
             clearTimeout(timeoutId);
@@ -1049,7 +1155,6 @@
     async function callAI(provider, text, fileBase64, mimeType, signal) {
         const apiKey = document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
-        // 預設強制開啟搜尋
         const searchEnabled = true; 
         let model = currentActiveModelId;
 
@@ -1073,14 +1178,12 @@
             currentParts.push({ text: text });
             const fullContents = [...chatHistory, { role: "user", parts: currentParts }];
 
-            // 強制開啟 Google Search 工具 (若模型支援)
-            // 修改點：將 google_search_retrieval 更新為 google_search
             let tools = [{ google_search: {} }];
             
             body = {
                 system_instruction: { parts: [{ text: prompt }] },
                 contents: fullContents,
-                tools: tools // 預設加入
+                tools: tools 
             };
 
         } else {
@@ -1089,7 +1192,6 @@
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = window.location.href; 
                 headers['X-Title'] = 'AI Assistant';
-                // OpenRouter 預設嘗試聯網
                 if (!model.endsWith(':online')) model += ':online';
             }
             else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
