@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
+    <!-- 引入 PDF.js 解析 PDF 文字 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     
     <style>
         :root {
@@ -221,7 +223,7 @@
 <div id="status-bar" role="status" aria-live="polite">載入中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -233,8 +235,8 @@
             <label for="provider-select">主要 AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (推薦)</option>
+                <option value="openrouter">OpenRouter (多模型)</option>
                 <option value="mistral">Mistral AI</option>
-                <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI (GPT)</option>
                 <option value="groq">Groq</option>
                 <option value="perplexity">Perplexity</option>
@@ -243,7 +245,7 @@
             <label for="api-key">主要 API Key:</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
-            <label for="model-select">模型選擇 (日期由新到舊):</label>
+            <label for="model-select">模型選擇 (2025最新):</label>
             <div class="row" style="margin-bottom: 10px;">
                 <select id="model-select" style="margin-bottom:0;" onchange="handleModelSelectChange()"></select>
                 <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="從網路更新模型清單">🔄 更新</button>
@@ -251,6 +253,15 @@
             
             <div id="custom-model-wrapper" class="hidden">
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
+            </div>
+
+            <!-- OpenRouter 專用設定 -->
+            <div id="openrouter-settings" class="hidden settings-subsection">
+                <h3>🌐 OpenRouter 搜尋設定</h3>
+                <label class="check-btn">
+                    <input type="checkbox" id="openrouter-web-search">
+                    <span>啟用聯網搜尋 (Web Search) - <small>可能需額外付費</small></span>
+                </label>
             </div>
             
             <!-- Enter 鍵設定 (預設勾選) -->
@@ -337,7 +348,7 @@
             <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" accesskey="v" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入 (Alt+V)" aria-label="語音輸入 (Alt+V)">🎤</button>
             
             <!-- 文字輸入框 (支援 DnD) -->
-            <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" accesskey="i" autocomplete="off" rows="3"></textarea>
+            <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" accesskey="i" autocomplete="off" rows="3" aria-label="輸入訊息區"></textarea>
             
             <!-- 發送按鈕 -->
             <button type="submit" id="submit-btn" accesskey="k" style="width: 80px; height: 80px; margin:0;" title="發送 (Alt+K)">傳送</button>
@@ -346,11 +357,14 @@
 </footer>
 
 <script>
+    // 設定 PDF.js Worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
     const DEFAULT_PROMPT = `# 角色設定 (Persona)
 你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
 
 # 全域規則 (Global Rules)
-無論處理何種任務，你必須嚴格遵守以下三大原則：
+无论处理何种任务，你必须严格遵守以下三大原则：
 
 1.  **語言規範**：
     *   **唯一輸出語言**：繁體中文（香港慣用詞彙）。
@@ -409,15 +423,29 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_no_search_box";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed";
 
+    // 2025 年模型清單更新
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "gemini-exp-1206", 
+            defaultModel: "gemini-2.0-flash-exp", 
             canFetch: true,
-            models: ["gemini-exp-1206", "gemini-1.5-pro", "gemini-1.5-flash"],
+            models: ["gemini-2.0-flash-exp", "gemini-exp-1206", "gemini-1.5-pro", "gemini-1.5-flash"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
+        },
+        openrouter: {
+            prompt: DEFAULT_PROMPT,
+            defaultModel: "meta-llama/llama-4-maverick:free",
+            canFetch: true,
+            models: [
+                "meta-llama/llama-4-maverick:free", 
+                "google/gemini-2.0-flash-exp:free", 
+                "qwen/qwen2.5-vl-72b-instruct:free",
+                "openai/gpt-4o",
+                "anthropic/claude-3.5-sonnet"
+            ],
+            listUrl: "https://openrouter.ai/api/v1/models"
         },
         mistral: {
             prompt: DEFAULT_PROMPT,
@@ -425,13 +453,6 @@
             canFetch: true,
             models: ["mistral-large-latest", "pixtral-large-latest", "ministral-8b-latest", "mistral-small-latest"],
             listUrl: "https://api.mistral.ai/v1/models"
-        },
-        openrouter: {
-            prompt: DEFAULT_PROMPT,
-            defaultModel: "openai/gpt-4o",
-            canFetch: true,
-            models: ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-pro-1.5"],
-            listUrl: "https://openrouter.ai/api/v1/models"
         },
         openai: {
             prompt: DEFAULT_PROMPT,
@@ -461,6 +482,8 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let chatHistory = [];
+    // 聲音環境
+    let audioContext = null;
 
     document.addEventListener('DOMContentLoaded', () => {
         if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
@@ -476,15 +499,18 @@
         const savedTimeout = localStorage.getItem('timeout_setting');
         if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
 
+        // OpenRouter 搜尋設定
+        const savedWebSearch = localStorage.getItem('openrouter_web_search');
+        document.getElementById('openrouter-web-search').checked = (savedWebSearch === 'true');
+
         // 還原語音設定
         const savedVoiceEngine = localStorage.getItem('voice_engine');
         if (savedVoiceEngine) document.getElementById('voice-engine').value = savedVoiceEngine;
         const savedVoiceKey = localStorage.getItem('voice_api_key');
         if (savedVoiceKey) document.getElementById('voice-api-key').value = savedVoiceKey;
 
-        // 還原 Enter 鍵設定 (預設為 true/Checked)
+        // 還原 Enter 鍵設定
         const savedEnter = localStorage.getItem('enter_to_send');
-        // 若為 null (首次使用) 或 'true'，則勾選；否則取消勾選
         if (savedEnter === null || savedEnter === 'true') {
             document.getElementById('enter-to-send').checked = true;
         } else {
@@ -505,6 +531,43 @@
         initDragAndDrop();
         initEnterKey();
     });
+
+    // 聲音提示功能
+    function playAudioCue(type) {
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        const now = audioContext.currentTime;
+        
+        if (type === 'start') {
+            // 處理開始：高音短嗶
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(660, now);
+            gainNode.gain.setValueAtTime(0.1, now);
+            oscillator.start(now);
+            oscillator.stop(now + 0.1);
+        } else if (type === 'success') {
+            // 成功：上行音
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(440, now);
+            oscillator.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+            gainNode.gain.setValueAtTime(0.1, now);
+            oscillator.start(now);
+            oscillator.stop(now + 0.2);
+        } else if (type === 'error') {
+            // 錯誤：低音長鳴
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.setValueAtTime(150, now);
+            gainNode.gain.setValueAtTime(0.15, now);
+            oscillator.start(now);
+            oscillator.stop(now + 0.4);
+        }
+    }
 
     // --- 重置對話功能 ---
     function resetConversation() {
@@ -543,6 +606,7 @@
                 const btn = document.getElementById('voice-btn');
                 btn.classList.add('recording');
                 showTransientStatus('正在聆聽 (瀏覽器)...', 'info');
+                playAudioCue('start');
             };
 
             recognition.onresult = function(event) {
@@ -562,6 +626,7 @@
             recognition.onerror = function(event) {
                 console.error(event.error);
                 showTransientStatus('語音辨識錯誤: ' + event.error, 'error');
+                playAudioCue('error');
                 stopVoiceInput();
             };
             recognition.onend = function() {
@@ -612,8 +677,10 @@
                 mediaRecorder.start();
                 btn.classList.add('recording');
                 showTransientStatus('正在錄音 (Whisper)...', 'info');
+                playAudioCue('start');
             } catch (err) {
                 showTransientStatus('無法存取麥克風: ' + err.message, 'error');
+                playAudioCue('error');
             }
         }
     }
@@ -668,6 +735,7 @@
             }
         } catch (e) {
             showTransientStatus("Whisper 錯誤: " + e.message, 'error');
+            playAudioCue('error');
         } finally {
             btn.classList.remove('processing');
             showReadyStatus();
@@ -762,7 +830,6 @@
     }
 
     function showReadyStatus() {
-        // 修改：平時只顯示「準備就緒」，不顯示模型名稱
         updateStatusBar("準備就緒", 'ready');
     }
 
@@ -838,6 +905,13 @@
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
+        // 控制 OpenRouter 設定區的顯示
+        if (pKey === 'openrouter') {
+            document.getElementById('openrouter-settings').classList.remove('hidden');
+        } else {
+            document.getElementById('openrouter-settings').classList.add('hidden');
+        }
+        
         const cachedListStr = localStorage.getItem(`${pKey}_model_list`);
         let modelList = conf.models;
         
@@ -904,6 +978,7 @@
         if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
             showTransientStatus("請先輸入 API Key", "error");
             document.getElementById('api-key').focus();
+            playAudioCue('error');
             return;
         }
 
@@ -961,11 +1036,14 @@
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
                 showTransientStatus(`更新成功 (${newModels.length} 個模型)`);
+                playAudioCue('success');
             } else {
                 showTransientStatus("未找到合適模型", "error");
+                playAudioCue('error');
             }
         } catch (e) {
             showTransientStatus(`更新失敗: ${e.message}`, "error");
+            playAudioCue('error');
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
@@ -1005,12 +1083,13 @@
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
         localStorage.setItem('enter_to_send', document.getElementById('enter-to-send').checked);
+        localStorage.setItem('openrouter_web_search', document.getElementById('openrouter-web-search').checked);
         
         saveVoiceSettings();
         
-        // 修改：儲存時才顯示詳細的提供者與模型名稱
         const pName = pKey.charAt(0).toUpperCase() + pKey.slice(1);
         showTransientStatus(`設定已儲存: ${pName} (${currentActiveModelId})`); 
+        playAudioCue('success');
         document.getElementById('settings-area').open = false;
     }
 
@@ -1082,8 +1161,11 @@
         }
 
         if (selectedFile) {
-            document.getElementById('upload-btn').innerText = `✅ 已加入影像`;
-            showTransientStatus(`已加入影像`);
+            document.getElementById('upload-btn').innerText = `✅ 已加入: ${selectedFile.name}`;
+            // 根據檔案類型更新 aria-label
+            document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
+            showTransientStatus(`已加入檔案`);
+            playAudioCue('success');
             
             if (!document.getElementById('pause-send').checked) {
                 setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
@@ -1091,60 +1173,28 @@
         }
     }
 
-    async function handleSubmit(e) {
-        e.preventDefault();
-        const inputField = document.getElementById('user-input');
-        const userInput = inputField.value.trim(); 
-        const pKey = document.getElementById('provider-select').value;
-        
-        if (!userInput && !selectedFile) {
-            showTransientStatus("請輸入內容", 'error'); return;
-        }
-
-        updateStatusBar("請稍後，正在處理...", 'busy');
-        
-        const submitBtn = document.getElementById('submit-btn');
-        submitBtn.disabled = true; submitBtn.innerText = "發送中";
-
-        const timeoutSec = parseInt(document.getElementById('timeout-setting').value) || 120;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
-
+    // 讀取 PDF 文字的輔助函式 (混合策略：先嘗試提取文字)
+    async function extractTextFromPDF(file) {
         try {
-            let fileData = null;
-            if (selectedFile) {
-                fileData = await readFileAsBase64(selectedFile);
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            
+            // 讀取前 5 頁即可 (避免過大)
+            const maxPages = Math.min(pdf.numPages, 5);
+            for (let i = 1; i <= maxPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + "\n";
             }
-
-            const response = await callAI(pKey, userInput, fileData, selectedFile ? selectedFile.type : null, controller.signal);
-            
-            // 修改：確保在成功回應後，嚴格清空所有輸入狀態
-            document.getElementById('user-input').value = "";      
-            document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
-            document.getElementById('file-input').value = "";
-            selectedFile = null; 
-            
-            let displayMsg = userInput;
-            if (fileData && fileData.length > 0) {
-                // 如果剛剛有上傳檔案，這裡確保歷史訊息能顯示檔名
-                // 但因為 selectedFile 已經被重置為 null，我們需要在重置前或利用閉包變數，
-                // 這裡簡單處理：若 response 成功，代表剛才是有檔案的，
-                // 但為了 UI 顯示正確，我們可以在 callAI 之前先存下檔名，或者接受這裡不顯示已重置的檔名。
-                // 不過為了符合「輸入問題之後顯示上載檔案名稱」的需求，
-                // 我們應該在重置前就處理好 displayMsg。
-            }
-            // 修正順序：應該先處理 displayMsg 再重置 selectedFile
-            // 但因為程式流程是 await callAI -> 重置 -> addMessage
-            // 我們需要重新調整一下順序
-            
-        } catch (err) {
-            // 錯誤處理...
-        } finally {
-            // 由於上面的 try block 結構被我註解打斷了，這裡提供修正後的完整 handleSubmit 邏輯
+            return fullText.trim();
+        } catch (e) {
+            console.error("PDF extract error", e);
+            return "";
         }
     }
-    
-    // 重新定義完整的 handleSubmit 以確保邏輯正確
+
     async function handleSubmit(e) {
         e.preventDefault();
         const inputField = document.getElementById('user-input');
@@ -1152,9 +1202,12 @@
         const pKey = document.getElementById('provider-select').value;
         
         if (!userInput && !selectedFile) {
-            showTransientStatus("請輸入內容", 'error'); return;
+            showTransientStatus("請輸入內容", 'error'); 
+            playAudioCue('error');
+            return;
         }
 
+        playAudioCue('start');
         updateStatusBar("請稍後，正在處理...", 'busy');
         
         const submitBtn = document.getElementById('submit-btn');
@@ -1167,23 +1220,54 @@
         // 先暫存檔案資訊供顯示用
         const currentFile = selectedFile;
         const currentFileName = selectedFile ? selectedFile.name : null;
+        let finalInputText = userInput;
 
         try {
             let fileData = null;
+            let finalMimeType = null;
+            let skipFileSend = false;
+
+            // 處理檔案邏輯 (混合策略)
             if (currentFile) {
-                fileData = await readFileAsBase64(currentFile);
+                // 如果是 Gemini，直接轉 Base64 傳送 (原生支援最強)
+                if (pKey === 'gemini') {
+                    fileData = await readFileAsBase64(currentFile);
+                    finalMimeType = currentFile.type;
+                } 
+                // 如果是 OpenRouter 或其他
+                else {
+                    if (currentFile.type === 'application/pdf') {
+                        // 嘗試提取文字 (節省 Token)
+                        const pdfText = await extractTextFromPDF(currentFile);
+                        if (pdfText && pdfText.length > 50) {
+                            finalInputText = `[使用者上傳了 PDF 文件，以下是內容摘要]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
+                            skipFileSend = true; // 已轉文字，不傳檔案
+                            fileData = null;
+                        } else {
+                            // 掃描檔/無文字 PDF
+                            throw new Error("此 PDF 似乎為掃描檔或無法讀取文字。OpenRouter 模式不支援純圖片 PDF，請切換至 'Google Gemini' 服務商，它具有原生視覺分析能力。");
+                        }
+                    } else if (currentFile.type.startsWith('image/')) {
+                        // 圖片正常處理
+                        fileData = await readFileAsBase64(currentFile);
+                        finalMimeType = currentFile.type;
+                    } else {
+                        // 影音檔：OpenRouter 暫不支援，建議使用 Gemini
+                        throw new Error("OpenRouter 模式暫不支援影音檔案分析，請切換至 'Google Gemini' 服務商。");
+                    }
+                }
             }
 
-            const response = await callAI(pKey, userInput, fileData, currentFile ? currentFile.type : null, controller.signal);
+            const response = await callAI(pKey, finalInputText, fileData, finalMimeType, controller.signal);
             
-            // 修改：成功取得回應後，立即清空所有輸入
-            document.getElementById('user-input').value = "";      
+            // 成功回應，清空輸入
+            document.getElementById('user-input').value = "";
+            document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
             document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
             
             let displayMsg = userInput;
-            // 顯示邏輯
             if (currentFileName) {
                 displayMsg = `[📎 ${currentFileName}]\n${userInput}`;
             }
@@ -1191,11 +1275,13 @@
             
             const aiMsgDiv = addMessage('assistant', response);
             
+            // 更新歷史紀錄
             if (pKey === 'gemini') {
-                chatHistory.push({ role: "user", parts: [{ text: userInput }] });
+                const historyText = skipFileSend ? finalInputText : userInput;
+                chatHistory.push({ role: "user", parts: [{ text: historyText }] });
                 chatHistory.push({ role: "model", parts: [{ text: response }] });
             } else {
-                chatHistory.push({ role: "user", content: userInput });
+                chatHistory.push({ role: "user", content: finalInputText });
                 chatHistory.push({ role: "assistant", content: response });
             }
 
@@ -1204,8 +1290,8 @@
                 setTimeout(() => aiMsgDiv.focus(), 100);
             }
             showReadyStatus();
+            playAudioCue('success');
             
-            // 成功震動 (短震 50ms)
             if (navigator.vibrate) navigator.vibrate(50);
 
         } catch (err) {
@@ -1224,8 +1310,8 @@
                 setTimeout(() => errorDiv.focus(), 100);
             }
             showReadyStatus();
-
-            // 錯誤震動 (長震 500ms)
+            playAudioCue('error');
+            
             if (navigator.vibrate) navigator.vibrate(500);
 
         } finally {
@@ -1246,7 +1332,6 @@
     async function callAI(provider, text, fileBase64, mimeType, signal) {
         const apiKey = document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
-        const searchEnabled = true; 
         let model = currentActiveModelId;
 
         if (!apiKey) throw new Error("請先輸入 API Key");
@@ -1283,7 +1368,12 @@
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = window.location.href; 
                 headers['X-Title'] = 'AI Assistant';
-                if (!model.endsWith(':online')) model += ':online';
+                
+                // 修正：檢查是否啟用 OpenRouter 聯網搜尋 (只加後綴，不強制)
+                const useOnline = document.getElementById('openrouter-web-search').checked;
+                if (useOnline && !model.endsWith(':online')) {
+                    model += ':online';
+                }
             }
             else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
             else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
@@ -1293,7 +1383,12 @@
             messages = messages.concat(chatHistory);
 
             let currentContent = text;
+            // OpenRouter 等標準 API 的圖片處理 (不支援 PDF/Video)
             if (fileBase64) {
+                if (!mimeType.startsWith('image/')) {
+                     // 再次防呆：非圖片類型不應進入此區塊 (已在 handleSubmit 處理)
+                     throw new Error("此模式不支援非圖片檔案，請切換至 Gemini");
+                }
                 currentContent = [
                     { type: "text", text: text },
                     { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
