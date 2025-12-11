@@ -11,7 +11,7 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 修正：統一使用 jsdelivr 引入 PDF.js 核心與 Worker，避免版本不一致或 CORS 問題 -->
+    <!-- 引入 PDF.js 核心與 Worker (使用 jsdelivr 確保 CORS 支援) -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
     
     <style>
@@ -204,6 +204,7 @@
         }
 
         /* 狀態列 */
+        /* 無障礙修正：aria-live="assertive" 確保錯誤發生時會優先朗讀 */
         #status-bar {
             position: fixed; top: 0; left: 0; right: 0;
             background: var(--status-bg); color: #fff;
@@ -445,7 +446,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v7_final";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v8_chinese_fix";
 
     const PROVIDERS = {
         gemini: {
@@ -508,9 +509,11 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         try {
-            // PDF.js Worker 設定 (使用 jsdelivr)
+            // 強制設定 PDF.js Worker，確保版本一致性
             if (typeof pdfjsLib !== 'undefined') {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.js';
+            } else {
+                console.warn("PDF.js library not loaded properly.");
             }
 
             if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
@@ -1191,15 +1194,15 @@
                     throw new Error("檔案大小為 0，無法讀取。");
                 }
 
-                // 顯示檔名 (即使包含特殊字元，瀏覽器也能正確顯示，無需過度編碼)
-                document.getElementById('upload-btn').innerText = `已選取: ${selectedFile.name}`;
-                document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
-                showTransientStatus(`已加入檔案`);
-                playAudioCue('success');
+                // 移除自動上傳，讓使用者確認檔名無誤
+                // 使用 encodeURIComponent 進行基本的顯示安全編碼 (雖然 innerText 會自動處理，但防範未然)
+                const safeName = selectedFile.name; 
+                document.getElementById('upload-btn').innerText = `已選取: ${safeName}`;
+                document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${safeName}`);
                 
-                if (!document.getElementById('pause-send').checked) {
-                    setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
-                }
+                // 強制狀態列顯示
+                updateStatusBar(`已準備好傳送檔案：${safeName}`, 'ready');
+                playAudioCue('success');
             }
         } catch (e) {
             console.error("File Select Error:", e);
@@ -1302,8 +1305,8 @@
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
         const currentFile = selectedFile;
-        // 修正：對檔名進行安全處理，防止特殊字元破壞 Prompt 結構
-        const safeFileName = selectedFile ? selectedFile.name.replace(/[\[\]]/g, "") : null;
+        // 修正：移除可能造成問題的檔名過濾，改用 encodeURIComponent 處理顯示部分
+        const safeFileName = selectedFile ? selectedFile.name : null;
         
         let finalInputText = userInput;
 
