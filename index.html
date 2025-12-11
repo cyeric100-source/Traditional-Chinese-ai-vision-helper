@@ -234,8 +234,7 @@
 <body>
 
 <!-- 頂部狀態列 -->
-<!-- 無障礙修正：aria-atomic="true" -->
-<div id="status-bar" role="status" aria-live="polite" aria-atomic="true">載入中...</div>
+<div id="status-bar" role="status" aria-live="polite" aria-atomic="true">系統載入中...</div>
 
 <div class="container">
     <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
@@ -342,12 +341,12 @@
             
             <!-- 上傳按鈕 -->
             <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u" style="flex:1;">
-                選擇檔案或拍照 (Alt+U)
+                選擇檔案 (Alt+U)
             </button>
             
             <!-- 新對話按鈕 -->
             <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" accesskey="n" style="flex:1;">
-                清除並開始新對話 (Alt+N)
+                清除對話 (Alt+N)
             </button>
 
             <!-- 暫停傳送開關 -->
@@ -372,8 +371,15 @@
 </footer>
 
 <script>
-    // 設定 PDF.js Worker (使用 v4.10.38 最新穩定版)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
+    // 全域錯誤處理：防止程式卡死在「載入中」
+    window.onerror = function(message, source, lineno, colno, error) {
+        const statusBar = document.getElementById('status-bar');
+        if (statusBar) {
+            statusBar.innerText = `發生錯誤: ${message}`;
+            statusBar.className = 'error';
+        }
+        console.error("Global Error:", message, error);
+    };
 
     const DEFAULT_PROMPT = `# 角色設定 (Persona)
 你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
@@ -438,7 +444,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v4_stable";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v5_final";
 
     // 2025 年最新穩定版模型清單
     const PROVIDERS = {
@@ -498,57 +504,70 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let chatHistory = [];
-    // 聲音環境
     let audioContext = null;
 
+    // 初始化應用程式
     document.addEventListener('DOMContentLoaded', () => {
-        if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
-            ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => {
-                localStorage.removeItem(`${p}_prompt`);
-            });
-            localStorage.setItem(PROMPT_VERSION_KEY, 'true');
+        try {
+            // PDF.js Worker 設定 (移至這裡並加上錯誤捕捉)
+            if (typeof pdfjsLib !== 'undefined') {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
+            } else {
+                console.warn("PDF.js library not loaded");
+            }
+
+            if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
+                ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => {
+                    localStorage.removeItem(`${p}_prompt`);
+                });
+                localStorage.setItem(PROMPT_VERSION_KEY, 'true');
+            }
+
+            const savedProvider = localStorage.getItem('provider');
+            const settingsDetails = document.getElementById('settings-area');
+            
+            const savedTimeout = localStorage.getItem('timeout_setting');
+            if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
+
+            const savedWebSearch = localStorage.getItem('openrouter_web_search');
+            document.getElementById('openrouter-web-search').checked = (savedWebSearch === 'true');
+
+            const savedVoiceEngine = localStorage.getItem('voice_engine');
+            if (savedVoiceEngine) document.getElementById('voice-engine').value = savedVoiceEngine;
+            const savedVoiceKey = localStorage.getItem('voice_api_key');
+            if (savedVoiceKey) document.getElementById('voice-api-key').value = savedVoiceKey;
+
+            const savedEnter = localStorage.getItem('enter_to_send');
+            if (savedEnter === null || savedEnter === 'true') {
+                document.getElementById('enter-to-send').checked = true;
+            } else {
+                document.getElementById('enter-to-send').checked = false;
+            }
+
+            // 初始化提供者與模型
+            if (savedProvider && PROVIDERS[savedProvider]) {
+                document.getElementById('provider-select').value = savedProvider;
+                settingsDetails.open = false; 
+            } else {
+                document.getElementById('provider-select').value = 'gemini'; 
+                settingsDetails.open = true; 
+            }
+            
+            handleProviderChange(false); 
+            initVoiceSystem();
+            initPasteImage();
+            initDragAndDrop();
+            initEnterKey();
+
+        } catch (e) {
+            console.error("Init Error", e);
+            updateStatusBar("初始化錯誤: " + e.message, "error");
+        } finally {
+            // 確保最後狀態是就緒
+            setTimeout(showReadyStatus, 500);
         }
-
-        const savedProvider = localStorage.getItem('provider');
-        const settingsDetails = document.getElementById('settings-area');
-        
-        const savedTimeout = localStorage.getItem('timeout_setting');
-        if (savedTimeout) document.getElementById('timeout-setting').value = savedTimeout;
-
-        // OpenRouter 搜尋設定
-        const savedWebSearch = localStorage.getItem('openrouter_web_search');
-        document.getElementById('openrouter-web-search').checked = (savedWebSearch === 'true');
-
-        // 還原語音設定
-        const savedVoiceEngine = localStorage.getItem('voice_engine');
-        if (savedVoiceEngine) document.getElementById('voice-engine').value = savedVoiceEngine;
-        const savedVoiceKey = localStorage.getItem('voice_api_key');
-        if (savedVoiceKey) document.getElementById('voice-api-key').value = savedVoiceKey;
-
-        // 還原 Enter 鍵設定
-        const savedEnter = localStorage.getItem('enter_to_send');
-        if (savedEnter === null || savedEnter === 'true') {
-            document.getElementById('enter-to-send').checked = true;
-        } else {
-            document.getElementById('enter-to-send').checked = false;
-        }
-
-        if (savedProvider) {
-            document.getElementById('provider-select').value = savedProvider;
-            settingsDetails.open = false; 
-        } else {
-            document.getElementById('provider-select').value = 'gemini'; 
-            settingsDetails.open = true; 
-        }
-        
-        handleProviderChange(false); 
-        initVoiceSystem();
-        initPasteImage();
-        initDragAndDrop();
-        initEnterKey();
     });
 
-    // 聲音提示功能
     function playAudioCue(type) {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
@@ -561,14 +580,12 @@
         const now = audioContext.currentTime;
         
         if (type === 'start') {
-            // 處理開始：高音短嗶
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(660, now);
             gainNode.gain.setValueAtTime(0.1, now);
             oscillator.start(now);
             oscillator.stop(now + 0.1);
         } else if (type === 'success') {
-            // 成功：上行音
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(440, now);
             oscillator.frequency.exponentialRampToValueAtTime(880, now + 0.15);
@@ -576,7 +593,6 @@
             oscillator.start(now);
             oscillator.stop(now + 0.2);
         } else if (type === 'error') {
-            // 錯誤：低音長鳴
             oscillator.type = 'sawtooth';
             oscillator.frequency.setValueAtTime(150, now);
             gainNode.gain.setValueAtTime(0.15, now);
@@ -585,13 +601,12 @@
         }
     }
 
-    // --- 重置對話功能 ---
     function resetConversation() {
-        chatHistory = []; // 清空記憶
-        document.getElementById('chat-output').innerHTML = ""; // 清空畫面
+        chatHistory = []; 
+        document.getElementById('chat-output').innerHTML = ""; 
         document.getElementById('user-input').value = "";
         selectedFile = null;
-        document.getElementById('upload-btn').innerText = "選擇檔案或拍照 (Alt+U)";
+        document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+U)";
         document.getElementById('file-input').value = "";
         
         toggleExportButtons(false);
@@ -790,7 +805,6 @@
         });
     }
 
-    // 拖放功能支援
     function initDragAndDrop() {
         const dropZone = document.getElementById('user-input');
         
@@ -821,7 +835,6 @@
         });
     }
 
-    // 初始化 Enter 鍵傳送
     function initEnterKey() {
         const input = document.getElementById('user-input');
         input.addEventListener('keydown', (e) => {
@@ -877,17 +890,15 @@
             contentDiv.innerText = content;
         } else if (role === 'assistant') {
             header.innerText = '回應結果：';
-            // 安全修正：引入 DOMPurify 清洗 HTML
             contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(content));
             
             document.getElementById('copy-btn').classList.remove('hidden');
             toggleExportButtons(true);
             
-            // 單則複製按鈕
             const miniCopyBtn = document.createElement('button');
             miniCopyBtn.className = 'mini-copy-btn';
-            miniCopyBtn.innerText = '複製此則回應';
-            miniCopyBtn.ariaLabel = '複製此則回應';
+            miniCopyBtn.innerText = '複製此回應';
+            miniCopyBtn.ariaLabel = '複製此回應';
             miniCopyBtn.onclick = function() {
                 navigator.clipboard.writeText(contentDiv.innerText)
                     .then(() => showTransientStatus("已複製該回應"));
@@ -920,10 +931,14 @@
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
         
+        if (!conf) {
+            console.error("Unknown provider:", pKey);
+            return;
+        }
+
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
-        // 控制 OpenRouter 設定區的顯示
         if (pKey === 'openrouter') {
             document.getElementById('openrouter-settings').classList.remove('hidden');
         } else {
@@ -988,16 +1003,27 @@
 
     async function fetchOnlineModels() {
         const pKey = document.getElementById('provider-select').value;
-        const apiKey = document.getElementById('api-key').value;
+        let apiKey = document.getElementById('api-key').value.trim(); // 修正：移除前後空白
         const conf = PROVIDERS[pKey];
 
         if (!conf.canFetch) return;
         
-        if ((pKey === 'gemini' || pKey === 'groq') && !apiKey) {
-            showTransientStatus("請先輸入 API Key", "error");
-            document.getElementById('api-key').focus();
-            playAudioCue('error');
-            return;
+        // 修正：檢查 key 是否為空
+        if (!apiKey && (pKey !== 'mistral' && pKey !== 'openrouter')) { 
+            // 註：有些服務如 openrouter 可能有免費 endpoint，但一般仍需 key 或檢查
+            // 這裡為了簡化，若沒 key 就提示。
+            if ((pKey === 'gemini' || pKey === 'groq' || pKey === 'openai')) {
+                alert("請先輸入 API Key 才能更新清單");
+                document.getElementById('api-key').focus();
+                playAudioCue('error');
+                return;
+            }
+        }
+        
+        // 如果是 OpenAI 或 Groq 但沒 key，還是擋一下比較安全
+        if (!apiKey && (pKey === 'openai' || pKey === 'groq' || pKey === 'gemini')) {
+             alert("請先輸入 API Key");
+             return;
         }
 
         const btn = document.getElementById('refresh-btn');
@@ -1025,6 +1051,7 @@
             }
             else if (pKey === 'gemini') {
                 const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
+                if (!res.ok) throw new Error(await res.text());
                 const data = await res.json();
                 if (data.models) {
                     newModels = data.models
@@ -1053,7 +1080,6 @@
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
-                // 無障礙修正：使用完整的句子與數量，確保讀屏軟體能清晰朗讀
                 showTransientStatus(`已成功更新模型清單，共找到 ${newModels.length} 個模型。`);
                 playAudioCue('success');
             } else {
@@ -1061,12 +1087,12 @@
                 playAudioCue('error');
             }
         } catch (e) {
+            console.error(e);
             showTransientStatus(`更新失敗: ${e.message}`, "error");
             playAudioCue('error');
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
-            // 保持狀態顯示，不立即覆蓋
         }
     }
 
@@ -1135,7 +1161,6 @@
         navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部歷史紀錄"));
     }
 
-    // 匯出對話功能
     function exportChat(format) {
         const output = document.getElementById('chat-output');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1168,11 +1193,9 @@
     }
 
     function handleFileSelect(fileObj) {
-        // 若直接傳入檔案物件 (DnD 或 Paste)
         if (fileObj) {
             selectedFile = fileObj;
         } else {
-            // 從 Input 讀取
             const fileInput = document.getElementById('file-input');
             if (fileInput.files.length > 0) {
                 selectedFile = fileInput.files[0];
@@ -1180,8 +1203,7 @@
         }
 
         if (selectedFile) {
-            document.getElementById('upload-btn').innerText = `已選取檔案: ${selectedFile.name}`;
-            // 根據檔案類型更新 aria-label
+            document.getElementById('upload-btn').innerText = `已選取: ${selectedFile.name}`;
             document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
             showTransientStatus(`已加入檔案`);
             playAudioCue('success');
@@ -1192,26 +1214,21 @@
         }
     }
 
-    // 修正後 PDF 讀取函式：嘗試提取文字，若可讀則讀全部
     async function extractTextFromPDF(file) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             
-            // 先嘗試讀第一頁，看有沒有文字
             let firstPage = await pdf.getPage(1);
             let firstContent = await firstPage.getTextContent();
             let firstText = firstContent.items.map(item => item.str).join(' ').trim();
 
-            // 如果前幾頁完全沒文字，極可能是掃描檔，回傳 null 讓外部轉用 Vision 處理
             if (!firstText || firstText.length < 20) {
                 console.log("PDF 似乎為圖像版/掃描版 (文字極少)");
                 return null; 
             }
 
-            // 若確定有文字，讀取全文件
             let fullText = "";
-            // 避免瀏覽器崩潰，設定上限 (例如 100 頁)
             const maxPages = Math.min(pdf.numPages, 100);
             
             for (let i = 1; i <= maxPages; i++) {
@@ -1226,40 +1243,32 @@
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
-            return null; // 發生錯誤也當作無法讀取文字，嘗試走 Vision 路線
+            return null; 
         }
     }
 
-    // 清理歷史紀錄中的圖片 Base64，只保留文字
     function cleanHistoryImages(providerKey) {
         if (!chatHistory || chatHistory.length === 0) return;
 
         if (providerKey === 'gemini') {
-            // Gemini 格式: { role: 'user', parts: [{text:...}, {inline_data:...}] }
             chatHistory.forEach(msg => {
                 if (msg.role === 'user' && msg.parts) {
                     const originalLen = msg.parts.length;
-                    // 過濾掉 inline_data
                     msg.parts = msg.parts.filter(p => !p.inline_data);
-                    
-                    // 如果原本有圖片但被移除了，補上一個文字說明，避免 parts 為空
                     if (msg.parts.length === 0 && originalLen > 0) {
                         msg.parts.push({ text: "[使用者上傳的圖片已移除以節省流量]" });
                     }
                 }
             });
         } else {
-            // OpenAI/OpenRouter 格式: { role: 'user', content: "..." OR content: [{type:'text'}, {type:'image_url'}] }
             chatHistory.forEach(msg => {
                 if (msg.role === 'user' && Array.isArray(msg.content)) {
                     const hasImage = msg.content.some(c => c.type === 'image_url');
-                    // 過濾掉 image_url
                     msg.content = msg.content.filter(c => c.type === 'text');
                     
                     if (msg.content.length === 0 && hasImage) {
                          msg.content = "[使用者上傳的圖片已移除以節省流量]";
                     } else if (msg.content.length === 1 && msg.content[0].type === 'text') {
-                        // 簡化為純字串 (部分 API 偏好)
                         msg.content = msg.content[0].text;
                     }
                 }
@@ -1289,12 +1298,10 @@
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
-        // 先暫存檔案資訊供顯示用
         const currentFile = selectedFile;
         const currentFileName = selectedFile ? selectedFile.name : null;
         let finalInputText = userInput;
 
-        // 執行歷史紀錄瘦身 (移除舊圖片)
         cleanHistoryImages(pKey);
 
         try {
@@ -1302,36 +1309,26 @@
             let finalMimeType = null;
             let skipFileSend = false;
 
-            // 處理檔案邏輯
             if (currentFile) {
                 if (currentFile.type === 'application/pdf') {
-                    // PDF 智慧判斷邏輯
                     const pdfText = await extractTextFromPDF(currentFile);
                     
                     if (pdfText) {
-                        // A. 文字版 PDF -> 轉為純文字 Prompt
                         finalInputText = `[使用者上傳了 PDF 文件，以下是內容]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
                         skipFileSend = true; 
                         fileData = null;
                     } else {
-                        // B. 圖像版/掃描 PDF -> 轉為 Vision Base64
-                        // 修改點：不再限制只允許 Gemini，因為許多現代模型已支援/或使用者想嘗試
-                        // 直接讀取為 Base64
                         fileData = await readFileAsBase64(currentFile);
                         finalMimeType = currentFile.type;
-                        // 若非 Gemini，可能部分模型會報錯，但我們嘗試傳送
                     }
                 } else if (currentFile.type.startsWith('image/')) {
-                    // 圖片正常處理
                     fileData = await readFileAsBase64(currentFile);
                     finalMimeType = currentFile.type;
                 } else {
-                    // 其他檔案 (Gemini 支援影音，其他不一定，但也嘗試放行)
                     if (pKey === 'gemini') {
                         fileData = await readFileAsBase64(currentFile);
                         finalMimeType = currentFile.type;
                     } else {
-                        // 這裡仍保留警告，因為影音支援在標準 API 極少
                         throw new Error("目前模式僅支援圖片上傳，影音檔請使用 Google Gemini。");
                     }
                 }
@@ -1339,10 +1336,9 @@
 
             const response = await callAI(pKey, finalInputText, fileData, finalMimeType, controller.signal);
             
-            // 成功回應，清空輸入
             document.getElementById('user-input').value = "";
             document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
-            document.getElementById('upload-btn').innerText = "選擇檔案或拍照 (Alt+U)";
+            document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
             
@@ -1354,7 +1350,6 @@
             
             const aiMsgDiv = addMessage('assistant', response);
             
-            // 更新歷史紀錄 (加入當前對話)
             if (pKey === 'gemini') {
                 const historyText = skipFileSend ? finalInputText : userInput;
                 const newParts = [];
@@ -1439,12 +1434,6 @@
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             delete headers['Authorization']; 
 
-            // 這裡構造此次請求的內容，注意 chatHistory 已經在 handleSubmit 外部維護了
-            // 我們需要將 chatHistory (已包含過去對話) + 當前對話組合
-            // 但因為 Gemini API 是 stateless 的 (除非用 cache)，所以每次要傳完整的
-            
-            // 注意：因為 handleSubmit 還沒把"當前"這則訊息 push 進 chatHistory
-            // 所以這裡要手動組裝當前訊息
             const currentParts = [];
             if (fileBase64) {
                 currentParts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
@@ -1482,9 +1471,6 @@
 
             let currentContent = text;
             if (fileBase64) {
-                // 修改點：即使是 PDF (非 image/ 開頭)，若使用者執意傳送 (如 OpenRouter 上支援 PDF 的模型)
-                // 我們嘗試將其包裝為 image_url 格式 (許多 Proxy 支援此方式傳遞 Base64 檔案)
-                // 或者直接傳送。標準 OpenAI API 會拒絕 application/pdf，但 OpenRouter 部分模型可能接受。
                 currentContent = [
                     { type: "text", text: text },
                     { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
