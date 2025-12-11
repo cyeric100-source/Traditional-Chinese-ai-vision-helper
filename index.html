@@ -6,8 +6,10 @@
     <title>AI 視障助理 (極簡全能版 - 2025)</title>
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
-    <!-- 引入 PDF.js 解析 PDF 文字 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- 引入 PDF.js (最新穩定版 v4.10.38) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
+    <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
     
     <style>
         :root {
@@ -108,6 +110,17 @@
             100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
 
+        /* 無障礙修正：減少動畫 */
+        @media (prefers-reduced-motion: reduce) {
+            button.recording, button.processing {
+                animation: none !important;
+                box-shadow: 0 0 0 4px rgba(255, 0, 0, 0.5);
+            }
+            * {
+                transition: none !important;
+            }
+        }
+
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
         summary { cursor: pointer; padding: 5px; }
         
@@ -189,6 +202,7 @@
         }
 
         /* 狀態列 */
+        /* 無障礙修正：加入 aria-atomic="true" 確保每次更新都會讀出完整內容 */
         #status-bar {
             position: fixed; top: 0; left: 0; right: 0;
             background: var(--status-bg); color: #fff;
@@ -220,7 +234,8 @@
 <body>
 
 <!-- 頂部狀態列 -->
-<div id="status-bar" role="status" aria-live="polite">載入中...</div>
+<!-- 無障礙修正：aria-atomic="true" -->
+<div id="status-bar" role="status" aria-live="polite" aria-atomic="true">載入中...</div>
 
 <div class="container">
     <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
@@ -357,8 +372,8 @@
 </footer>
 
 <script>
-    // 設定 PDF.js Worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    // 設定 PDF.js Worker (使用 v4.10.38 最新穩定版)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
 
     const DEFAULT_PROMPT = `# 角色設定 (Persona)
 你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸，提供安全、精準且易於透過螢幕朗讀軟體 (Screen Reader) 接收的資訊。
@@ -423,27 +438,28 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v4_stable";
 
-    // 2025 年模型清單更新
+    // 2025 年最新穩定版模型清單 (Gemini Default 設為 1.5-flash 以確保 API 可用性，但保留清單選項)
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "gemini-2.0-flash-exp", 
+            defaultModel: "gemini-1.5-flash", 
             canFetch: true,
-            models: ["gemini-2.0-flash-exp", "gemini-exp-1206", "gemini-1.5-pro", "gemini-1.5-flash"],
+            models: ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-2.5-pro"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "meta-llama/llama-4-maverick:free",
+            defaultModel: "openai/gpt-4o",
             canFetch: true,
             models: [
-                "meta-llama/llama-4-maverick:free", 
-                "google/gemini-2.0-flash-exp:free", 
-                "qwen/qwen2.5-vl-72b-instruct:free",
+                "openai/gpt-5.1",
                 "openai/gpt-4o",
-                "anthropic/claude-3.5-sonnet"
+                "anthropic/claude-4-sonnet",
+                "meta-llama/llama-4-maverick", 
+                "google/gemini-2.5-flash", 
+                "qwen/qwen2.5-vl-72b-instruct"
             ],
             listUrl: "https://openrouter.ai/api/v1/models"
         },
@@ -458,14 +474,14 @@
             prompt: DEFAULT_PROMPT,
             defaultModel: "gpt-4o",
             canFetch: true, 
-            models: ["gpt-4o", "gpt-4o-mini"],
+            models: ["gpt-4o", "gpt-5.1", "gpt-4o-mini"],
             listUrl: "https://api.openai.com/v1/models"
         },
         groq: {
             prompt: DEFAULT_PROMPT,
-            defaultModel: "llama-3.2-90b-vision-preview", 
+            defaultModel: "llama-3.3-70b-versatile", 
             canFetch: true, 
-            models: ["llama-3.2-90b-vision-preview", "llama-3.3-70b-versatile"], 
+            models: ["llama-3.3-70b-versatile", "llama-4-maverick-17b-128e-instruct", "llama-3.2-90b-vision-preview"], 
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         perplexity: {
@@ -861,7 +877,9 @@
             contentDiv.innerText = content;
         } else if (role === 'assistant') {
             header.innerText = '回應結果：';
-            contentDiv.innerHTML = marked.parse(content);
+            // 安全修正：引入 DOMPurify 清洗 HTML
+            contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(content));
+            
             document.getElementById('copy-btn').classList.remove('hidden');
             toggleExportButtons(true);
             
@@ -1035,9 +1053,8 @@
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
-                // 修正：狀態列顯示更明確的訊息，確保讀屏軟體能讀出
-                const msg = `更新完成，已成功載入 ${newModels.length} 個模型`;
-                showTransientStatus(msg);
+                // 無障礙修正：使用完整的句子與數量，確保讀屏軟體能清晰朗讀
+                showTransientStatus(`已成功更新模型清單，共找到 ${newModels.length} 個模型。`);
                 playAudioCue('success');
             } else {
                 showTransientStatus("未找到合適模型", "error");
@@ -1049,7 +1066,7 @@
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
-            // 修正：這裡不再呼叫 showReadyStatus()，避免覆蓋上面的成功訊息
+            // 保持狀態顯示，不立即覆蓋
         }
     }
 
@@ -1175,25 +1192,78 @@
         }
     }
 
-    // 讀取 PDF 文字的輔助函式 (混合策略：先嘗試提取文字)
+    // 修正後 PDF 讀取函式：嘗試提取文字，若可讀則讀全部
     async function extractTextFromPDF(file) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            let fullText = "";
             
-            // 讀取前 5 頁即可 (避免過大)
-            const maxPages = Math.min(pdf.numPages, 5);
+            // 先嘗試讀第一頁，看有沒有文字
+            let firstPage = await pdf.getPage(1);
+            let firstContent = await firstPage.getTextContent();
+            let firstText = firstContent.items.map(item => item.str).join(' ').trim();
+
+            // 如果前幾頁完全沒文字，極可能是掃描檔，回傳 null 讓外部轉用 Vision 處理
+            if (!firstText || firstText.length < 20) {
+                console.log("PDF 似乎為圖像版/掃描版 (文字極少)");
+                return null; 
+            }
+
+            // 若確定有文字，讀取全文件
+            let fullText = "";
+            // 避免瀏覽器崩潰，設定上限 (例如 100 頁)
+            const maxPages = Math.min(pdf.numPages, 100);
+            
             for (let i = 1; i <= maxPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items.map(item => item.str).join(' ');
-                fullText += pageText + "\n";
+                fullText += `[第 ${i} 頁]\n${pageText}\n`;
             }
+            
+            if (pdf.numPages > 100) fullText += "\n[文件過長，僅讀取前 100 頁]";
+            
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
-            return "";
+            return null; // 發生錯誤也當作無法讀取文字，嘗試走 Vision 路線
+        }
+    }
+
+    // 清理歷史紀錄中的圖片 Base64，只保留文字
+    function cleanHistoryImages(providerKey) {
+        if (!chatHistory || chatHistory.length === 0) return;
+
+        if (providerKey === 'gemini') {
+            // Gemini 格式: { role: 'user', parts: [{text:...}, {inline_data:...}] }
+            chatHistory.forEach(msg => {
+                if (msg.role === 'user' && msg.parts) {
+                    const originalLen = msg.parts.length;
+                    // 過濾掉 inline_data
+                    msg.parts = msg.parts.filter(p => !p.inline_data);
+                    
+                    // 如果原本有圖片但被移除了，補上一個文字說明，避免 parts 為空
+                    if (msg.parts.length === 0 && originalLen > 0) {
+                        msg.parts.push({ text: "[使用者上傳的圖片已移除以節省流量]" });
+                    }
+                }
+            });
+        } else {
+            // OpenAI/OpenRouter 格式: { role: 'user', content: "..." OR content: [{type:'text'}, {type:'image_url'}] }
+            chatHistory.forEach(msg => {
+                if (msg.role === 'user' && Array.isArray(msg.content)) {
+                    const hasImage = msg.content.some(c => c.type === 'image_url');
+                    // 過濾掉 image_url
+                    msg.content = msg.content.filter(c => c.type === 'text');
+                    
+                    if (msg.content.length === 0 && hasImage) {
+                         msg.content = "[使用者上傳的圖片已移除以節省流量]";
+                    } else if (msg.content.length === 1 && msg.content[0].type === 'text') {
+                        // 簡化為純字串 (部分 API 偏好)
+                        msg.content = msg.content[0].text;
+                    }
+                }
+            });
         }
     }
 
@@ -1224,47 +1294,52 @@
         const currentFileName = selectedFile ? selectedFile.name : null;
         let finalInputText = userInput;
 
+        // 執行歷史紀錄瘦身 (移除舊圖片)
+        cleanHistoryImages(pKey);
+
         try {
             let fileData = null;
             let finalMimeType = null;
             let skipFileSend = false;
 
-            // 處理檔案邏輯 (混合策略)
+            // 處理檔案邏輯
             if (currentFile) {
-                // 如果是 Gemini，直接轉 Base64 傳送 (原生支援最強)
-                if (pKey === 'gemini') {
+                if (currentFile.type === 'application/pdf') {
+                    // PDF 智慧判斷邏輯
+                    const pdfText = await extractTextFromPDF(currentFile);
+                    
+                    if (pdfText) {
+                        // A. 文字版 PDF -> 轉為純文字 Prompt
+                        finalInputText = `[使用者上傳了 PDF 文件，以下是內容]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
+                        skipFileSend = true; 
+                        fileData = null;
+                    } else {
+                        // B. 圖像版/掃描 PDF -> 轉為 Vision Base64
+                        // 修改點：不再限制只允許 Gemini，因為許多現代模型已支援/或使用者想嘗試
+                        // 直接讀取為 Base64
+                        fileData = await readFileAsBase64(currentFile);
+                        finalMimeType = currentFile.type;
+                        // 若非 Gemini，可能部分模型會報錯，但我們嘗試傳送
+                    }
+                } else if (currentFile.type.startsWith('image/')) {
+                    // 圖片正常處理
                     fileData = await readFileAsBase64(currentFile);
                     finalMimeType = currentFile.type;
-                } 
-                // 如果是 OpenRouter 或其他
-                else {
-                    if (currentFile.type === 'application/pdf') {
-                        // 嘗試提取文字 (節省 Token)
-                        const pdfText = await extractTextFromPDF(currentFile);
-                        if (pdfText && pdfText.length > 50) {
-                            finalInputText = `[使用者上傳了 PDF 文件，以下是內容摘要]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
-                            skipFileSend = true; // 已轉文字，不傳檔案
-                            fileData = null;
-                        } else {
-                            // 掃描檔/無文字 PDF -> 不再報錯，而是將檔案當作圖片/PDF 發送
-                            // 這樣可以讓支援 PDF 的 OpenRouter 模型嘗試讀取
-                            fileData = await readFileAsBase64(currentFile);
-                            finalMimeType = currentFile.type;
-                        }
-                    } else if (currentFile.type.startsWith('image/')) {
-                        // 圖片正常處理
+                } else {
+                    // 其他檔案 (Gemini 支援影音，其他不一定，但也嘗試放行)
+                    if (pKey === 'gemini') {
                         fileData = await readFileAsBase64(currentFile);
                         finalMimeType = currentFile.type;
                     } else {
-                        // 影音檔：OpenRouter 暫不支援，建議使用 Gemini
-                        throw new Error("OpenRouter 模式暫不支援影音檔案分析，請切換至 'Google Gemini' 服務商。");
+                        // 這裡仍保留警告，因為影音支援在標準 API 極少
+                        throw new Error("目前模式僅支援圖片上傳，影音檔請使用 Google Gemini。");
                     }
                 }
             }
 
             const response = await callAI(pKey, finalInputText, fileData, finalMimeType, controller.signal);
             
-            // 修正：成功回應後，確實清空輸入與檔案狀態
+            // 成功回應，清空輸入
             document.getElementById('user-input').value = "";
             document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
             document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
@@ -1279,13 +1354,26 @@
             
             const aiMsgDiv = addMessage('assistant', response);
             
-            // 更新歷史紀錄
+            // 更新歷史紀錄 (加入當前對話)
             if (pKey === 'gemini') {
                 const historyText = skipFileSend ? finalInputText : userInput;
-                chatHistory.push({ role: "user", parts: [{ text: historyText }] });
+                const newParts = [];
+                if (fileData && !skipFileSend) {
+                     newParts.push({ inline_data: { mime_type: finalMimeType, data: fileData } });
+                }
+                newParts.push({ text: historyText });
+                
+                chatHistory.push({ role: "user", parts: newParts });
                 chatHistory.push({ role: "model", parts: [{ text: response }] });
             } else {
-                chatHistory.push({ role: "user", content: finalInputText });
+                let msgContent = finalInputText;
+                if (fileData && !skipFileSend) {
+                    msgContent = [
+                        { type: "text", text: finalInputText },
+                        { type: "image_url", image_url: { url: `data:${finalMimeType};base64,${fileData}` } }
+                    ];
+                }
+                chatHistory.push({ role: "user", content: msgContent });
                 chatHistory.push({ role: "assistant", content: response });
             }
 
@@ -1351,11 +1439,18 @@
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             delete headers['Authorization']; 
 
+            // 這裡構造此次請求的內容，注意 chatHistory 已經在 handleSubmit 外部維護了
+            // 我們需要將 chatHistory (已包含過去對話) + 當前對話組合
+            // 但因為 Gemini API 是 stateless 的 (除非用 cache)，所以每次要傳完整的
+            
+            // 注意：因為 handleSubmit 還沒把"當前"這則訊息 push 進 chatHistory
+            // 所以這裡要手動組裝當前訊息
             const currentParts = [];
             if (fileBase64) {
                 currentParts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             }
             currentParts.push({ text: text });
+            
             const fullContents = [...chatHistory, { role: "user", parts: currentParts }];
 
             let tools = [{ google_search: {} }];
@@ -1373,7 +1468,6 @@
                 headers['HTTP-Referer'] = window.location.href; 
                 headers['X-Title'] = 'AI Assistant';
                 
-                // 修正：檢查是否啟用 OpenRouter 聯網搜尋 (只加後綴，不強制)
                 const useOnline = document.getElementById('openrouter-web-search').checked;
                 if (useOnline && !model.endsWith(':online')) {
                     model += ':online';
@@ -1387,13 +1481,10 @@
             messages = messages.concat(chatHistory);
 
             let currentContent = text;
-            // OpenRouter 等標準 API 的圖片處理 (嘗試支援 PDF)
             if (fileBase64) {
-                // 修改：允許 PDF 通過，不再強制檢查 image/ 開頭
-                // 因為部分模型或 API 可能接受 application/pdf 作為 Base64 輸入
-                if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
-                     throw new Error("此模式不支援非圖片/PDF檔案，請切換至 Gemini");
-                }
+                // 修改點：即使是 PDF (非 image/ 開頭)，若使用者執意傳送 (如 OpenRouter 上支援 PDF 的模型)
+                // 我們嘗試將其包裝為 image_url 格式 (許多 Proxy 支援此方式傳遞 Base64 檔案)
+                // 或者直接傳送。標準 OpenAI API 會拒絕 application/pdf，但 OpenRouter 部分模型可能接受。
                 currentContent = [
                     { type: "text", text: text },
                     { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
