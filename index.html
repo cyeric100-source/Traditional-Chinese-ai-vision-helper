@@ -1035,8 +1035,9 @@
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
-                // 成功時，這裡設定狀態並播放音效
-                showTransientStatus(`更新成功 (${newModels.length} 個模型)`);
+                // 修正：狀態列顯示更明確的訊息，確保讀屏軟體能讀出
+                const msg = `更新完成，已成功載入 ${newModels.length} 個模型`;
+                showTransientStatus(msg);
                 playAudioCue('success');
             } else {
                 showTransientStatus("未找到合適模型", "error");
@@ -1263,7 +1264,7 @@
 
             const response = await callAI(pKey, finalInputText, fileData, finalMimeType, controller.signal);
             
-            // 成功回應，清空輸入
+            // 修正：成功回應後，確實清空輸入與檔案狀態
             document.getElementById('user-input').value = "";
             document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
             document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
