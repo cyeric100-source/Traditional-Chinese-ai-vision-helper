@@ -1035,6 +1035,7 @@
                 updateModelSelect(newModels, newModels[0]); 
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
+                // 成功時，這裡設定狀態並播放音效
                 showTransientStatus(`更新成功 (${newModels.length} 個模型)`);
                 playAudioCue('success');
             } else {
@@ -1047,7 +1048,7 @@
         } finally {
             btn.innerText = originalText;
             btn.disabled = false;
-            showReadyStatus(); 
+            // 修正：這裡不再呼叫 showReadyStatus()，避免覆蓋上面的成功訊息
         }
     }
 
@@ -1244,8 +1245,10 @@
                             skipFileSend = true; // 已轉文字，不傳檔案
                             fileData = null;
                         } else {
-                            // 掃描檔/無文字 PDF
-                            throw new Error("此 PDF 似乎為掃描檔或無法讀取文字。OpenRouter 模式不支援純圖片 PDF，請切換至 'Google Gemini' 服務商，它具有原生視覺分析能力。");
+                            // 掃描檔/無文字 PDF -> 不再報錯，而是將檔案當作圖片/PDF 發送
+                            // 這樣可以讓支援 PDF 的 OpenRouter 模型嘗試讀取
+                            fileData = await readFileAsBase64(currentFile);
+                            finalMimeType = currentFile.type;
                         }
                     } else if (currentFile.type.startsWith('image/')) {
                         // 圖片正常處理
@@ -1383,11 +1386,12 @@
             messages = messages.concat(chatHistory);
 
             let currentContent = text;
-            // OpenRouter 等標準 API 的圖片處理 (不支援 PDF/Video)
+            // OpenRouter 等標準 API 的圖片處理 (嘗試支援 PDF)
             if (fileBase64) {
-                if (!mimeType.startsWith('image/')) {
-                     // 再次防呆：非圖片類型不應進入此區塊 (已在 handleSubmit 處理)
-                     throw new Error("此模式不支援非圖片檔案，請切換至 Gemini");
+                // 修改：允許 PDF 通過，不再強制檢查 image/ 開頭
+                // 因為部分模型或 API 可能接受 application/pdf 作為 Base64 輸入
+                if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
+                     throw new Error("此模式不支援非圖片/PDF檔案，請切換至 Gemini");
                 }
                 currentContent = [
                     { type: "text", text: text },
