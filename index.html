@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 視障助理 (極簡全能版 - 2025)</title>
+    
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
-    <!-- 引入 PDF.js (最新穩定版 v4.10.38) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
+    
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+
+    <!-- 修正：統一使用 jsdelivr 引入 PDF.js 核心與 Worker，避免版本不一致或 CORS 問題 -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
     
     <style>
         :root {
@@ -201,7 +204,6 @@
         }
 
         /* 狀態列 */
-        /* 無障礙修正：aria-live="assertive" 確保錯誤發生時會優先朗讀 */
         #status-bar {
             position: fixed; top: 0; left: 0; right: 0;
             background: var(--status-bg); color: #fff;
@@ -443,7 +445,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v6_final";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v7_final";
 
     const PROVIDERS = {
         gemini: {
@@ -506,9 +508,9 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         try {
-            // PDF.js Worker 設定
+            // PDF.js Worker 設定 (使用 jsdelivr)
             if (typeof pdfjsLib !== 'undefined') {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.js';
             }
 
             if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
@@ -557,7 +559,6 @@
             console.error("Init Error", e);
             updateStatusBar("初始化錯誤: " + e.message, "error");
         } finally {
-            // 解決狀態列卡住的問題
             setTimeout(showReadyStatus, 500);
         }
     });
@@ -992,7 +993,6 @@
         }
     }
 
-    // 修正：檢查 API Key 與錯誤處理
     async function fetchOnlineModels() {
         const pKey = document.getElementById('provider-select').value;
         let apiKey = document.getElementById('api-key').value.trim();
@@ -1000,7 +1000,6 @@
 
         if (!conf.canFetch) return;
         
-        // 修正：如果沒有 Key 且不是 Mistral (Mistral API 也需要 Key，這裡統一檢查)
         if (!apiKey && (pKey === 'gemini' || pKey === 'groq' || pKey === 'openai' || pKey === 'mistral')) {
             alert("請先輸入 API Key 才能更新清單");
             document.getElementById('api-key').focus();
@@ -1174,7 +1173,7 @@
         showTransientStatus(`已匯出 ${extension.toUpperCase()} 檔案`);
     }
 
-    // 修正：中文/特殊檔名上載問題
+    // 修正：針對中文檔名的防呆與錯誤處理
     function handleFileSelect(fileObj) {
         try {
             if (fileObj) {
@@ -1187,11 +1186,12 @@
             }
 
             if (selectedFile) {
-                // 檢查檔案大小是否為 0
+                // 檢查檔案大小
                 if (selectedFile.size === 0) {
                     throw new Error("檔案大小為 0，無法讀取。");
                 }
 
+                // 顯示檔名 (即使包含特殊字元，瀏覽器也能正確顯示，無需過度編碼)
                 document.getElementById('upload-btn').innerText = `已選取: ${selectedFile.name}`;
                 document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
                 showTransientStatus(`已加入檔案`);
@@ -1203,19 +1203,20 @@
             }
         } catch (e) {
             console.error("File Select Error:", e);
-            showTransientStatus("檔案選取錯誤: " + e.message, "error");
+            showTransientStatus("檔案讀取錯誤: " + e.message, "error");
             playAudioCue('error');
             selectedFile = null;
             document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+U)";
         }
     }
 
-    // 修正：PDF 讀取設定 (加入 cMapUrl 支援中文)
+    // 修正：統一 CMap 來源，解決中文 PDF 提取失敗問題
     async function extractTextFromPDF(file) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ 
                 data: arrayBuffer,
+                // 關鍵修正：統一使用 jsdelivr 的 cmaps 路徑，確保支援中文
                 cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
                 cMapPacked: true,
             }).promise;
@@ -1244,6 +1245,7 @@
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
+            // 發生錯誤時回傳 null，讓系統降級為 Vision 模式
             return null; 
         }
     }
@@ -1300,7 +1302,9 @@
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
         const currentFile = selectedFile;
-        const currentFileName = selectedFile ? selectedFile.name : null;
+        // 修正：對檔名進行安全處理，防止特殊字元破壞 Prompt 結構
+        const safeFileName = selectedFile ? selectedFile.name.replace(/[\[\]]/g, "") : null;
+        
         let finalInputText = userInput;
 
         cleanHistoryImages(pKey);
@@ -1315,10 +1319,11 @@
                     const pdfText = await extractTextFromPDF(currentFile);
                     
                     if (pdfText) {
-                        finalInputText = `[使用者上傳了 PDF 文件，以下是內容]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
+                        finalInputText = `[使用者上傳了 PDF 文件 (${safeFileName})，以下是內容]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
                         skipFileSend = true; 
                         fileData = null;
                     } else {
+                        // PDF 降級處理 (轉為 Base64 圖片/文件)
                         fileData = await readFileAsBase64(currentFile);
                         finalMimeType = currentFile.type;
                     }
@@ -1326,6 +1331,7 @@
                     fileData = await readFileAsBase64(currentFile);
                     finalMimeType = currentFile.type;
                 } else {
+                    // 其他類型 (如音訊)，嘗試直接讀取
                     if (pKey === 'gemini') {
                         fileData = await readFileAsBase64(currentFile);
                         finalMimeType = currentFile.type;
@@ -1344,8 +1350,8 @@
             selectedFile = null; 
             
             let displayMsg = userInput;
-            if (currentFileName) {
-                displayMsg = `[📎 ${currentFileName}]\n${userInput}`;
+            if (safeFileName) {
+                displayMsg = `[📎 ${safeFileName}]\n${userInput}`;
             }
             addMessage('user', displayMsg);
             
