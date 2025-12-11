@@ -11,7 +11,7 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 引入 PDF.js 核心與 Worker (使用 jsdelivr 確保 CORS 支援) -->
+    <!-- 修正：統一使用 jsdelivr 引入 PDF.js 核心與 Worker，避免版本不一致或 CORS 問題 -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
     
     <style>
@@ -204,7 +204,6 @@
         }
 
         /* 狀態列 */
-        /* 無障礙修正：aria-live="assertive" 確保錯誤發生時會優先朗讀 */
         #status-bar {
             position: fixed; top: 0; left: 0; right: 0;
             background: var(--status-bg); color: #fff;
@@ -446,7 +445,7 @@
 3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
 4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v8_chinese_fix";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v7_final";
 
     const PROVIDERS = {
         gemini: {
@@ -507,13 +506,25 @@
     let chatHistory = [];
     let audioContext = null;
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // 強制設定 PDF.js Worker，確保版本一致性
+            // 修正問題 A：解決 PDF Worker 跨域讀取問題
+            // 使用 fetch 將 worker 腳本下載並轉為 Blob URL，繞過同源限制
             if (typeof pdfjsLib !== 'undefined') {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.js';
-            } else {
-                console.warn("PDF.js library not loaded properly.");
+                const workerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.js';
+                try {
+                    const response = await fetch(workerUrl);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                    } else {
+                        // 若 fetch 失敗則回退到直接網址
+                         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+                    }
+                } catch (e) {
+                    console.warn("Worker Blob fetch failed, using direct URL", e);
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+                }
             }
 
             if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
@@ -690,7 +701,26 @@
         } else {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+                
+                // 修正問題 B：iOS Safari 相容性
+                // 自動偵測瀏覽器支援的 MIME Type，優先使用 Opus (WebM) 或 MP4
+                const mimeTypes = [
+                    'audio/webm;codecs=opus', 
+                    'audio/webm', 
+                    'audio/mp4', 
+                    'audio/aac', 
+                    'audio/ogg'
+                ];
+                
+                let selectedMime = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
+                
+                // 建立 Recorder 時帶入支援的 MIME Type
+                const options = selectedMime ? { mimeType: selectedMime } : undefined;
+                mediaRecorder = new MediaRecorder(stream, options);
+                
+                // 將偵測到的 MIME 存入物件，供 onstop 使用
+                mediaRecorder.detectedMimeType = selectedMime || '';
+                
                 audioChunks = [];
                 
                 mediaRecorder.ondataavailable = event => {
@@ -698,8 +728,12 @@
                 };
 
                 mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' }); 
-                    await processWhisperAudio(audioBlob, engine);
+                    // 使用相同的 MIME Type 建立 Blob
+                    const type = mediaRecorder.detectedMimeType || 'audio/webm';
+                    const audioBlob = new Blob(audioChunks, { type: type }); 
+                    
+                    // 傳遞副檔名資訊給處理函式
+                    await processWhisperAudio(audioBlob, engine, type);
                     stream.getTracks().forEach(track => track.stop());
                 };
 
@@ -714,7 +748,7 @@
         }
     }
 
-    async function processWhisperAudio(blob, engine) {
+    async function processWhisperAudio(blob, engine, mimeType) {
         const btn = document.getElementById('voice-btn');
         let apiKey = document.getElementById('voice-api-key').value.trim();
         if (!apiKey) apiKey = document.getElementById('api-key').value.trim();
@@ -727,7 +761,15 @@
         }
 
         const formData = new FormData();
-        formData.append('file', blob, 'recording.webm');
+        
+        // 修正：根據 MIME Type 決定正確的副檔名，確保 API 能識別
+        let ext = 'webm';
+        if (mimeType && mimeType.includes('mp4')) ext = 'mp4';
+        else if (mimeType && mimeType.includes('aac')) ext = 'aac';
+        else if (mimeType && mimeType.includes('ogg')) ext = 'ogg';
+        else if (mimeType && mimeType.includes('wav')) ext = 'wav';
+
+        formData.append('file', blob, `recording.${ext}`);
         
         let url = "";
         let modelName = "";
@@ -1194,15 +1236,15 @@
                     throw new Error("檔案大小為 0，無法讀取。");
                 }
 
-                // 移除自動上傳，讓使用者確認檔名無誤
-                // 使用 encodeURIComponent 進行基本的顯示安全編碼 (雖然 innerText 會自動處理，但防範未然)
-                const safeName = selectedFile.name; 
-                document.getElementById('upload-btn').innerText = `已選取: ${safeName}`;
-                document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${safeName}`);
-                
-                // 強制狀態列顯示
-                updateStatusBar(`已準備好傳送檔案：${safeName}`, 'ready');
+                // 顯示檔名 (即使包含特殊字元，瀏覽器也能正確顯示，無需過度編碼)
+                document.getElementById('upload-btn').innerText = `已選取: ${selectedFile.name}`;
+                document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
+                showTransientStatus(`已加入檔案`);
                 playAudioCue('success');
+                
+                if (!document.getElementById('pause-send').checked) {
+                    setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
+                }
             }
         } catch (e) {
             console.error("File Select Error:", e);
@@ -1305,8 +1347,8 @@
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
         const currentFile = selectedFile;
-        // 修正：移除可能造成問題的檔名過濾，改用 encodeURIComponent 處理顯示部分
-        const safeFileName = selectedFile ? selectedFile.name : null;
+        // 修正：對檔名進行安全處理，防止特殊字元破壞 Prompt 結構
+        const safeFileName = selectedFile ? selectedFile.name.replace(/[\[\]]/g, "") : null;
         
         let finalInputText = userInput;
 
