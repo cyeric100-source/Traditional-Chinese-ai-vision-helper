@@ -260,6 +260,10 @@
             <label for="api-key">主要 API Key:</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
+            <!-- 新增模型篩選功能 -->
+            <label for="model-filter-input">篩選模型 (即時搜尋):</label>
+            <input type="text" id="model-filter-input" placeholder="輸入關鍵字篩選 (如: gemini, latest)..." oninput="handleModelFilter()">
+
             <label for="model-select">模型選擇 (2025最新):</label>
             <div class="row" style="margin-bottom: 10px;">
                 <select id="model-select" style="margin-bottom:0;" onchange="handleModelSelectChange()"></select>
@@ -505,6 +509,8 @@
     let audioChunks = [];
     let chatHistory = [];
     let audioContext = null;
+    // 新增：儲存當前供應商的所有模型，供篩選用
+    let allCurrentModels = [];
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
@@ -996,10 +1002,17 @@
             }
         }
 
+        // 儲存全域模型清單，供篩選用
+        allCurrentModels = modelList;
+
+        // 切換服務商時，清空篩選輸入框
+        document.getElementById('model-filter-input').value = "";
+
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         currentActiveModelId = savedModel;
         
-        updateModelSelect(modelList, savedModel);
+        // 透過篩選邏輯來渲染清單 (即時更新)
+        handleModelFilter();
         
         document.getElementById('refresh-btn').style.display = conf.canFetch ? 'block' : 'none';
         
@@ -1007,6 +1020,16 @@
         
         if (save) localStorage.setItem('provider', pKey);
         showReadyStatus();
+    }
+
+    // 新增：處理模型篩選邏輯
+    function handleModelFilter() {
+        const filterText = document.getElementById('model-filter-input').value.toLowerCase();
+        
+        // 若輸入框為空，顯示所有模型；否則過濾包含關鍵字的模型
+        const filteredList = allCurrentModels.filter(m => m.toLowerCase().includes(filterText));
+        
+        updateModelSelect(filteredList, currentActiveModelId);
     }
 
     function updateModelSelect(models, targetModel) {
@@ -1032,6 +1055,7 @@
             select.value = targetModel; 
             customWrapper.classList.add('hidden');
         } else {
+            // 如果目前的模型因為篩選被隱藏，或是本來就是自定義模型，則顯示自定義輸入框
             select.value = "CUSTOM_ENTRY"; 
             customWrapper.classList.remove('hidden'); 
             customInput.value = targetModel;
@@ -1103,7 +1127,12 @@
 
             if (newModels.length > 0) {
                 localStorage.setItem(`${pKey}_model_list`, JSON.stringify(newModels));
-                updateModelSelect(newModels, newModels[0]); 
+                
+                // 更新全域模型變數
+                allCurrentModels = newModels;
+                // 重新渲染並套用篩選
+                handleModelFilter();
+
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
                 showTransientStatus(`已成功更新模型清單，共找到 ${newModels.length} 個模型。`);
