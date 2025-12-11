@@ -243,7 +243,7 @@
     <!-- 設定區 -->
     <details id="settings-area">
         <summary role="button" aria-expanded="false" accesskey="s">
-            <h2>⚙️ 設定 (Alt+S)</h2>
+            <h2>設定 (Alt+S)</h2>
         </summary>
         
         <div style="margin-top: 15px;">
@@ -263,7 +263,7 @@
             <label for="model-select">模型選擇 (2025最新):</label>
             <div class="row" style="margin-bottom: 10px;">
                 <select id="model-select" style="margin-bottom:0;" onchange="handleModelSelectChange()"></select>
-                <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="從網路更新模型清單">🔄 更新</button>
+                <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="從網路更新模型清單">更新模型清單</button>
             </div>
             
             <div id="custom-model-wrapper" class="hidden">
@@ -272,7 +272,7 @@
 
             <!-- OpenRouter 專用設定 -->
             <div id="openrouter-settings" class="hidden settings-subsection">
-                <h3>🌐 OpenRouter 搜尋設定</h3>
+                <h3>OpenRouter 搜尋設定</h3>
                 <label class="check-btn">
                     <input type="checkbox" id="openrouter-web-search">
                     <span>啟用聯網搜尋 (Web Search) - <small>可能需額外付費</small></span>
@@ -287,7 +287,7 @@
 
             <!-- 語音設定區塊 -->
             <div class="settings-subsection">
-                <h3>🎤 語音輸入設定</h3>
+                <h3>語音輸入設定</h3>
                 <label for="voice-engine">語音引擎:</label>
                 <select id="voice-engine" onchange="saveVoiceSettings()">
                     <option value="browser">瀏覽器原生 (免費，品質普通)</option>
@@ -308,9 +308,9 @@
             <textarea id="system-prompt" placeholder="在此輸入系統指令..."></textarea>
 
             <div class="row">
-                <button type="button" onclick="saveSettings()">💾 儲存</button>
-                <button type="button" onclick="restoreDefaults()" class="secondary">↩️ 恢復預設</button>
-                <button type="button" onclick="showHelp()" class="secondary" style="background:#004488; color:white;">📖 說明</button>
+                <button type="button" onclick="saveSettings()">儲存設定</button>
+                <button type="button" onclick="restoreDefaults()" class="secondary">恢復預設值</button>
+                <button type="button" onclick="showHelp()" class="secondary" style="background:#004488; color:white;">功能說明</button>
             </div>
         </div>
     </details>
@@ -321,13 +321,13 @@
         
         <div class="export-actions">
             <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="flex:1;">
-                📋 複製 (Alt+C)
+                複製所有對話內容 (Alt+C)
             </button>
             <button type="button" id="export-txt-btn" class="secondary hidden" onclick="exportChat('txt')" accesskey="t" style="flex:1;">
-                📥 匯出 TXT (Alt+T)
+                匯出對話為 TXT (Alt+T)
             </button>
             <button type="button" id="export-html-btn" class="secondary hidden" onclick="exportChat('html')" accesskey="h" style="flex:1;">
-                🌐 匯出 HTML (Alt+H)
+                匯出對話為 HTML (Alt+H)
             </button>
         </div>
     </main>
@@ -342,12 +342,12 @@
             
             <!-- 上傳按鈕 -->
             <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u" style="flex:1;">
-                📷 拍攝/檔案 (Alt+U)
+                選擇檔案或拍照 (Alt+U)
             </button>
             
             <!-- 新對話按鈕 -->
             <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" accesskey="n" style="flex:1;">
-                🗑️ 新對話 (Alt+N)
+                清除並開始新對話 (Alt+N)
             </button>
 
             <!-- 暫停傳送開關 -->
@@ -360,7 +360,7 @@
         <!-- 第二排：輸入與發送 -->
         <div class="row">
             <!-- 語音輸入按鈕 -->
-            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" accesskey="v" style="width: 60px; height: 80px; margin:0; font-size: 1.5rem;" title="語音輸入 (Alt+V)" aria-label="語音輸入 (Alt+V)">🎤</button>
+            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" accesskey="v" style="width: auto; padding: 0 15px; height: 80px; margin:0; font-size: 1.2rem;" title="語音輸入 (Alt+V)" aria-label="語音輸入 (Alt+V)">語音輸入</button>
             
             <!-- 文字輸入框 (支援 DnD) -->
             <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" accesskey="i" autocomplete="off" rows="3" aria-label="輸入訊息區"></textarea>
@@ -440,7 +440,7 @@
 
     const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v4_stable";
 
-    // 2025 年最新穩定版模型清單 (Gemini Default 設為 1.5-flash 以確保 API 可用性，但保留清單選項)
+    // 2025 年最新穩定版模型清單
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
@@ -591,7 +591,7 @@
         document.getElementById('chat-output').innerHTML = ""; // 清空畫面
         document.getElementById('user-input').value = "";
         selectedFile = null;
-        document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+        document.getElementById('upload-btn').innerText = "選擇檔案或拍照 (Alt+U)";
         document.getElementById('file-input').value = "";
         
         toggleExportButtons(false);
@@ -886,8 +886,8 @@
             // 單則複製按鈕
             const miniCopyBtn = document.createElement('button');
             miniCopyBtn.className = 'mini-copy-btn';
-            miniCopyBtn.innerText = '📄 複製此回應';
-            miniCopyBtn.ariaLabel = '複製此回應';
+            miniCopyBtn.innerText = '複製此則回應';
+            miniCopyBtn.ariaLabel = '複製此則回應';
             miniCopyBtn.onclick = function() {
                 navigator.clipboard.writeText(contentDiv.innerText)
                     .then(() => showTransientStatus("已複製該回應"));
@@ -970,7 +970,7 @@
         });
         
         let customOpt = document.createElement('option');
-        customOpt.value = "CUSTOM_ENTRY"; customOpt.innerText = "✏️ 自行輸入模型 ID...";
+        customOpt.value = "CUSTOM_ENTRY"; customOpt.innerText = "自行輸入模型 ID...";
         select.appendChild(customOpt);
 
         const customWrapper = document.getElementById('custom-model-wrapper');
@@ -1002,7 +1002,7 @@
 
         const btn = document.getElementById('refresh-btn');
         const originalText = btn.innerText;
-        btn.innerText = "⏳...";
+        btn.innerText = "讀取中...";
         btn.disabled = true;
 
         try {
@@ -1180,7 +1180,7 @@
         }
 
         if (selectedFile) {
-            document.getElementById('upload-btn').innerText = `✅ 已加入: ${selectedFile.name}`;
+            document.getElementById('upload-btn').innerText = `已選取檔案: ${selectedFile.name}`;
             // 根據檔案類型更新 aria-label
             document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
             showTransientStatus(`已加入檔案`);
@@ -1342,7 +1342,7 @@
             // 成功回應，清空輸入
             document.getElementById('user-input').value = "";
             document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
-            document.getElementById('upload-btn').innerText = "📷 拍攝/檔案 (Alt+U)";
+            document.getElementById('upload-btn').innerText = "選擇檔案或拍照 (Alt+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
             
