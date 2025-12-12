@@ -42,7 +42,6 @@
         .container {
             max-width: 900px;
             margin: 0 auto;
-            /* 底部預留更多空間給長輸入框 */
             padding: 10px 10px 450px 10px;
         }
 
@@ -56,7 +55,6 @@
             display: inline-block;
         }
 
-        /* 通用輸入元件樣式 */
         input, select, textarea {
             width: 100%; padding: 12px; margin-top: 5px; margin-bottom: 10px;
             background: var(--input-bg); border: 2px solid var(--border-color);
@@ -125,7 +123,6 @@
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
         summary { cursor: pointer; padding: 5px; }
         
-        /* PDF 工具箱專用樣式 */
         .pdf-tool-group {
             background: var(--tool-bg);
             border: 2px solid #005588;
@@ -304,7 +301,7 @@
                 📄 PDF 完整閱讀 (智能偵測啟動)
             </button>
             <small style="display:block; margin: 5px 0 15px 0; color:#ccc;">
-                * 說明：自動偵測文字版或圖像版。若為圖像版，將自動切換至 Gemini 進行完整讀取 (即便上方選擇其他模型)。
+                * 說明：自動偵測文字版或圖像版。若為圖像版，將自動切換至 Gemini 2.5 Flash 進行完整 OCR。
             </small>
 
             <div class="row">
@@ -390,40 +387,54 @@
 3. **精簡**：重點置前，避免冗長。
 `;
 
-    // 嚴格 OCR 專用指令
+    // 2025 年新版：嚴格英文 OCR 指令 (解決摘要問題)
     const PDF_OCR_PROMPT = `
-# MISSION
-You are a high-precision OCR engine, NOT an AI assistant. Your ONLY task is to transcribe text from the provided image/PDF document into raw text.
+# SYSTEM INSTRUCTION: HIGH-PRECISION OCR MODE
 
-# STRICT EXECUTION RULES (MUST FOLLOW)
-1. **VERBATIM TRANSCRIPTION**: Output the text EXACTLY as it appears. Do not correct typos, do not improve grammar, and do not summarize.
-2. **NO OMISSION**: Transcribe every single visible word, including page numbers, headers, footers, and side notes.
-3. **NO HALLUCINATION**: If a part is illegible, write \`[ILLEGIBLE]\`. Do not guess.
-4. **NO CONVERSATIONAL FILLER**: Do not start with "Here is the text...". Just output the document text directly.
-5. **LAYOUT**: Use newlines to separate paragraphs naturally.
+## ROLE
+You are a specialized OCR (Optical Character Recognition) engine. You are NOT a conversational assistant.
 
-# INPUT-OUTPUT AGREEMENT
+## MISSION
+Transcribe every single visible word from the provided document image(s) into raw text.
+
+## STRICT EXECUTION RULES (MUST FOLLOW)
+1. **VERBATIM TRANSCRIPTION**: Output the text EXACTLY as it appears. Do NOT correct grammar. Do NOT summarize. Do NOT skip any sections.
+2. **FULL COMPLETENESS**: Transcribe headers, footers, page numbers, side notes, legal disclaimers, and tables.
+3. **FORMATTING**: Use natural newlines to separate paragraphs. 
+4. **NO CONVERSATIONAL FILLER**: Do NOT say "Here is the text" or "Sure". Output ONLY the transcribed content.
+5. **UNCERTAINTY**: If text is absolutely illegible, write \`[ILLEGIBLE]\`. Do NOT guess.
+
+## INPUT-OUTPUT AGREEMENT
 Input: [Image/PDF]
 Output: [Raw String of Text Only]
 `;
 
-    // 嚴格翻譯專用指令
+    // 2025 年新版：嚴格英文翻譯指令 (確保完整不刪減)
     const PDF_TRANSLATE_PROMPT = `
-# MISSION
-Translate the full content into natural, fluent Traditional Chinese (Hong Kong style).
+# SYSTEM INSTRUCTION: PROFESSIONAL DOCUMENT TRANSLATION
 
-# CRITICAL RULES
-1. **FULL COMPLETENESS**: Translate 100% of the content. Do not skip headers, footers, numbers, or legal disclaimers.
-2. **NO SUMMARIZATION**: Translate sentence by sentence. Do not combine similar sentences.
-3. **ACCURACY**: Strictly preserve the original meaning.
-4. **OUTPUT**: Only the translated text. No conversational filler.
+## ROLE
+You are a professional document translator specializing in Traditional Chinese (Hong Kong usage).
+
+## MISSION
+Translate the provided source content FULLY and ACCURATELY into Traditional Chinese.
+
+## STRICT EXECUTION RULES (MUST FOLLOW)
+1. **100% COMPLETENESS**: Translate every single sentence, header, footer, page number, and number. Do NOT summarize. Do NOT omit any paragraph.
+2. **ACCURACY**: Preserve the original meaning, tone, and legal implications.
+3. **STRUCTURE**: Maintain the original paragraph structure and layout logic.
+4. **OUTPUT FORMAT**: Output ONLY the translated text. Do NOT include the original text unless explicitly asked. Do NOT add conversational filler like "Here is the translation".
+
+## INPUT-OUTPUT AGREEMENT
+Input: [Source Text/Document]
+Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v7_final";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v8_final";
     
     // AI Provider Config
     const PROVIDERS = {
-        gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-1.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro"] },
+        gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
         openrouter: { prompt: DEFAULT_PROMPT, defaultModel: "openai/gpt-4o", canFetch: true, listUrl: "https://openrouter.ai/api/v1/models", models: ["openai/gpt-4o", "google/gemini-2.5-flash"] },
         mistral: { prompt: DEFAULT_PROMPT, defaultModel: "mistral-large-latest", canFetch: true, listUrl: "https://api.mistral.ai/v1/models", models: ["mistral-large-latest"] },
         openai: { prompt: DEFAULT_PROMPT, defaultModel: "gpt-4o", canFetch: true, listUrl: "https://api.openai.com/v1/models", models: ["gpt-4o"] },
@@ -576,7 +587,7 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
         showTransientStatus("對話紀錄已清除 (新對話)", "info");
     }
 
-    /* PDF 工具箱專用邏輯 (新增) */
+    /* PDF 工具箱專用邏輯 */
     function handlePDFToolFileSelect() {
         const input = document.getElementById('pdf-tool-input');
         if (input.files.length > 0) {
@@ -591,7 +602,6 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             return;
         }
 
-        // 清空畫面，準備顯示結果
         resetConversation();
         playAudioCue('start');
         
@@ -599,25 +609,23 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
         const forceTranslate = document.getElementById('pdf-translate').checked;
 
         try {
-            // 模式 1: 強制 AI
+            // 模式 1: 強制 AI (直接上傳)
             if (alwaysAI) {
-                updateStatusBar("正在上傳 PDF 給 AI 完整讀取...", "busy");
+                updateStatusBar("正在上傳 PDF 給 AI (Gemini 2.5) 完整讀取...", "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
                 return;
             }
 
             // 模式 2: 智能偵測 (先試本機)
             updateStatusBar("正在嘗試本機提取文字...", "busy");
-            const localText = await extractTextFromPDF(file, true); // true = report progress
+            const localText = await extractTextFromPDF(file, true); 
 
             if (localText && localText.length > 50) {
                 // 本機提取成功
                 if (forceTranslate) {
                     updateStatusBar("本機提取成功，正在傳送給 AI 進行完整翻譯...", "busy");
-                    // 傳送純文字給 AI 翻譯
                     await performAIProcessing(null, "translate_text", localText);
                 } else {
-                    // 直接顯示結果
                     updateStatusBar("本機提取完成", "ready");
                     addMessage('assistant', localText);
                     playAudioCue('success');
@@ -625,8 +633,8 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
                     output.lastChild.focus();
                 }
             } else {
-                // 本機提取失敗 (文字太少或空)，轉用 AI OCR
-                updateStatusBar("本機提取文字過少，轉用 AI OCR 完整識別...", "busy");
+                // 本機提取失敗，轉用 AI OCR
+                updateStatusBar("本機提取文字過少，轉用 AI (Gemini 2.5) 完整識別...", "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
             }
 
@@ -638,22 +646,18 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
         }
     }
 
-    // 統一的 AI 處理函式 (針對 PDF 工具)
+    // 統一的 AI 處理函式 (修正版：強制使用 Gemini 2.5 Flash)
     async function performAIProcessing(fileObj, mode, textData) {
-        // [修正] 預設讀取當前設定
         let targetProvider = document.getElementById('provider-select').value;
         let targetApiKey = document.getElementById('api-key').value;
         let targetModel = currentActiveModelId;
 
-        // [修正] 若為 PDF 檔案 (OCR 模式)，強制使用 Gemini，因為其他 API 不支援 application/pdf
+        // [關鍵修正] 若為 PDF 檔案 (OCR 模式)，強制使用 Gemini，並解決 404 錯誤
         if (fileObj && fileObj.type === 'application/pdf') {
             console.log("PDF 檔案處理：強制切換至 Gemini 模式");
             targetProvider = 'gemini';
             
-            // 嘗試讀取 Gemini 專用 Key (若先前已儲存)
             const storedGeminiKey = localStorage.getItem('gemini_key');
-            
-            // 如果當前介面本來就是 Gemini，就用介面上的 Key
             if (document.getElementById('provider-select').value === 'gemini') {
                 targetApiKey = document.getElementById('api-key').value;
             } else if (storedGeminiKey) {
@@ -662,27 +666,24 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
                 throw new Error("處理 PDF 必須使用 Google Gemini 服務。請先在設定中切換至 'Google Gemini'，輸入 API Key 並儲存，然後再試。");
             }
 
-            // [修正] 強制使用 Flash 模型 (速度最快且支援 PDF)
-            targetModel = "gemini-1.5-flash"; 
+            // [關鍵修正] 使用 2025 年新標準模型 ID，避免 404
+            targetModel = "gemini-2.5-flash"; 
         }
 
         if (!targetApiKey) throw new Error("請先設定 API Key");
         
-        // 選擇 Prompt
+        // 選擇嚴格的英文 Prompt
         let systemPrompt = "";
         if (mode === "ocr_strict") systemPrompt = PDF_OCR_PROMPT;
         else if (mode === "translate_only" || mode === "translate_text") systemPrompt = PDF_TRANSLATE_PROMPT;
 
         const controller = new AbortController(); 
         
-        let contentPart = [];
-        
-        // 準備傳給 callAI 的文字輸入
         let userText = "";
         if (mode === "translate_text") {
             userText = `[SOURCE TEXT TO TRANSLATE]:\n${textData}`;
         } else {
-            userText = "Please process this document according to the strict system rules.";
+            userText = "Please process this document according to the strict system rules found in the System Instruction.";
         }
 
         let fileData = null;
@@ -692,26 +693,19 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             mimeType = fileObj.type;
         }
 
-        // 這裡我們直接呼叫 callAI，並傳入 override 的設定
-        // 先暫存 System Prompt
+        // 暫存並替換 Prompt
         const originalPromptVal = document.getElementById('system-prompt').value;
         document.getElementById('system-prompt').value = systemPrompt; 
 
         try {
-            // 清空 history 確保沒有干擾
             chatHistory = []; 
-            
-            // [修正] 傳入特定的 Provider, Key, Model
             const response = await callAI(targetProvider, userText, fileData, mimeType, controller.signal, targetModel, targetApiKey);
-            
             addMessage('assistant', response);
             playAudioCue('success');
             updateStatusBar("處理完成", "ready");
             const output = document.getElementById('chat-output');
             output.lastChild.focus();
-
         } finally {
-            // 還原 Prompt
             document.getElementById('system-prompt').value = originalPromptVal;
         }
     }
@@ -1036,7 +1030,6 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
         } catch (e) { showTransientStatus("檔案錯誤", "error"); selectedFile = null; }
     }
 
-    // 修改版：支援進度回報的 PDF 提取
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -1047,7 +1040,7 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             }).promise;
             
             let fullText = "";
-            const maxPages = pdf.numPages; // 不限制頁數，讀取全部
+            const maxPages = pdf.numPages; 
             
             for (let i = 1; i <= maxPages; i++) {
                 if (reportProgress) updateStatusBar(`正在提取本機文字 (第 ${i} / ${maxPages} 頁)...`, "busy");
@@ -1056,7 +1049,6 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items.map(item => item.str).join(' ');
                 
-                // 保留頁碼分隔
                 if (pageText.trim().length > 0) {
                     fullText += `[第 ${i} 頁]\n${pageText}\n\n`;
                 }
@@ -1100,7 +1092,6 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
 
             if (selectedFile) {
                 if (selectedFile.type === 'application/pdf') {
-                    // 一般對話模式下，嘗試先讀文字，若無則傳 Base64
                     const pdfText = await extractTextFromPDF(selectedFile);
                     if (pdfText && pdfText.length > 50) {
                         finalInputText = `[PDF 內容]:\n${pdfText}\n\n[用戶提問]: ${userInput}`;
@@ -1115,7 +1106,6 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
                 }
             }
 
-            // 一般傳送不強制使用 override，除非使用者自己在 PDF 工具箱觸發
             const response = await callAI(pKey, finalInputText, skipFileSend ? null : fileData, mimeType, controller.signal);
             
             inputField.value = "";
@@ -1138,12 +1128,9 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
         }
     }
 
-    // [修正] callAI 支援 overrideModel 和 overrideKey (讓 PDF 工具箱可強制使用 Gemini)
     async function callAI(provider, text, fileBase64, mimeType, signal, overrideModel = null, overrideKey = null) {
-        // 若有傳入 overrideKey 則優先使用，否則抓介面上的
         const apiKey = overrideKey || document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
-        // 若有傳入 overrideModel 則優先使用
         const model = overrideModel || currentActiveModelId;
 
         if (!apiKey) throw new Error("請輸入 API Key");
@@ -1159,16 +1146,11 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             if (fileBase64) parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             parts.push({ text: text });
             
-            // 修正：為了同時支援 Tool 和一般對話，我們檢查 chatHistory 是否為空
             let contents = [];
             if (chatHistory.length > 0) {
-                 // 這裡只簡單實作：若有 history，假設這是對話模式，直接 append
-                 // 但為了簡化，若 overrideModel 存在 (代表是 Tool 模式)，我們不使用 history
                  if (overrideModel) {
                      contents.push({ role: "user", parts: parts });
                  } else {
-                     // 這裡應該要處理 chatHistory 轉 Gemini 格式，但為了極簡版，暫時忽略完整歷史轉制
-                     // 實務上建議使用最新的 contents
                      contents.push({ role: "user", parts: parts });
                  }
             } else {
@@ -1178,7 +1160,6 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             body = { system_instruction: { parts: [{ text: prompt }] }, contents: contents };
 
         } else {
-            // OpenAI / OpenRouter 等
             if (provider === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = window.location.href; headers['X-Title'] = 'AI Assistant';
