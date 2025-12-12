@@ -11,7 +11,7 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 修正：統一使用 jsdelivr 引入 PDF.js 核心與 Worker，避免版本不一致或 CORS 問題 -->
+    <!-- 修正：統一使用 jsdelivr 引入 PDF.js 核心 -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
     
     <style>
@@ -242,8 +242,8 @@
 
     <!-- 設定區 -->
     <details id="settings-area">
-        <summary role="button" aria-expanded="false" accesskey="s">
-            <h2>設定 (Alt+S)</h2>
+        <summary role="button" aria-expanded="false" id="settings-summary" aria-keyshortcuts="Alt+Shift+S">
+            <h2>設定 (Alt+Shift+S)</h2>
         </summary>
         
         <div style="margin-top: 15px;">
@@ -324,14 +324,14 @@
         <div id="chat-output" class="message-area"></div>
         
         <div class="export-actions">
-            <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" accesskey="c" style="flex:1;">
-                複製所有對話內容 (Alt+C)
+            <button type="button" id="copy-btn" class="secondary hidden" onclick="copyResult()" aria-keyshortcuts="Alt+Shift+C" style="flex:1;">
+                複製所有對話內容 (Alt+Shift+C)
             </button>
-            <button type="button" id="export-txt-btn" class="secondary hidden" onclick="exportChat('txt')" accesskey="t" style="flex:1;">
-                匯出對話為 TXT (Alt+T)
+            <button type="button" id="export-txt-btn" class="secondary hidden" onclick="exportChat('txt')" aria-keyshortcuts="Alt+Shift+T" style="flex:1;">
+                匯出對話為 TXT (Alt+Shift+T)
             </button>
-            <button type="button" id="export-html-btn" class="secondary hidden" onclick="exportChat('html')" accesskey="h" style="flex:1;">
-                匯出對話為 HTML (Alt+H)
+            <button type="button" id="export-html-btn" class="secondary hidden" onclick="exportChat('html')" aria-keyshortcuts="Alt+Shift+H" style="flex:1;">
+                匯出對話為 HTML (Alt+Shift+H)
             </button>
         </div>
     </main>
@@ -345,32 +345,32 @@
             <input type="file" id="file-input" class="visually-hidden" accept="*/*" onchange="handleFileSelect()">
             
             <!-- 上傳按鈕 -->
-            <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" accesskey="u" style="flex:1;">
-                選擇檔案 (Alt+U)
+            <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" aria-keyshortcuts="Alt+Shift+U" style="flex:1;">
+                選擇檔案 (Alt+Shift+U)
             </button>
             
             <!-- 新對話按鈕 -->
-            <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" accesskey="n" style="flex:1;">
-                清除對話 (Alt+N)
+            <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" aria-keyshortcuts="Alt+Shift+N" style="flex:1;">
+                清除對話 (Alt+Shift+N)
             </button>
 
             <!-- 暫停傳送開關 -->
             <label class="check-btn" style="flex:1;">
-                <input type="checkbox" id="pause-send" accesskey="p">
-                <span>暫停傳送 (Alt+P)</span>
+                <input type="checkbox" id="pause-send" aria-keyshortcuts="Alt+Shift+P">
+                <span>暫停傳送 (Alt+Shift+P)</span>
             </label>
         </div>
         
         <!-- 第二排：輸入與發送 -->
         <div class="row">
             <!-- 語音輸入按鈕 -->
-            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" accesskey="v" style="width: auto; padding: 0 15px; height: 80px; margin:0; font-size: 1.2rem;" title="語音輸入 (Alt+V)" aria-label="語音輸入 (Alt+V)">語音輸入</button>
+            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" aria-keyshortcuts="Alt+Shift+V" style="width: auto; padding: 0 15px; height: 80px; margin:0; font-size: 1.2rem;" title="語音輸入 (Alt+Shift+V)" aria-label="語音輸入 (Alt+Shift+V)">語音輸入</button>
             
             <!-- 文字輸入框 (支援 DnD) -->
-            <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" accesskey="i" autocomplete="off" rows="3" aria-label="輸入訊息區"></textarea>
+            <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" aria-keyshortcuts="Alt+Shift+I" autocomplete="off" rows="3" aria-label="輸入訊息區"></textarea>
             
             <!-- 發送按鈕 -->
-            <button type="submit" id="submit-btn" accesskey="k" style="width: 80px; height: 80px; margin:0;" title="發送 (Alt+K)">傳送</button>
+            <button type="submit" id="submit-btn" aria-keyshortcuts="Alt+Shift+K" style="width: 80px; height: 80px; margin:0;" title="發送 (Alt+Shift+K)">傳送</button>
         </div>
     </form>
 </footer>
@@ -511,20 +511,75 @@
     let audioContext = null;
     // 新增：儲存當前供應商的所有模型，供篩選用
     let allCurrentModels = [];
+    
+    // 全域變數供 PDF Worker 使用
+    let pdfWorkerUrl = "";
+    let pdfCMapUrl = "";
+
+    // 修正：iOS Safari 全域音效解鎖
+    function unlockAudioContext() {
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+                // 解鎖成功後移除監聽器
+                document.removeEventListener('click', unlockAudioContext);
+                document.removeEventListener('touchstart', unlockAudioContext);
+            });
+        }
+    }
+    document.addEventListener('click', unlockAudioContext);
+    document.addEventListener('touchstart', unlockAudioContext);
+    
+    // 修正：全域鍵盤快速鍵監聽器 (取代 accesskey)
+    document.addEventListener('keydown', handleGlobalShortcuts);
+
+    function handleGlobalShortcuts(e) {
+        // 僅偵測 Alt + Shift + 字母
+        if (!e.altKey || !e.shiftKey) return;
+
+        const key = e.key.toLowerCase();
+        
+        const actions = {
+            's': { id: 'settings-summary', type: 'click' }, // 設定
+            'c': { id: 'copy-btn', type: 'click' },         // 複製
+            't': { id: 'export-txt-btn', type: 'click' },   // 匯出 TXT
+            'h': { id: 'export-html-btn', type: 'click' },  // 匯出 HTML
+            'u': { id: 'upload-btn', type: 'click' },       // 上傳
+            'n': { id: 'new-chat-btn', type: 'click' },     // 新對話
+            'p': { id: 'pause-send', type: 'click' },       // 暫停傳送
+            'v': { id: 'voice-btn', type: 'click' },        // 語音
+            'k': { id: 'submit-btn', type: 'click' },       // 傳送
+            'i': { id: 'user-input', type: 'focus' }        // 輸入框焦點
+        };
+
+        if (actions[key]) {
+            // 防止瀏覽器預設行為 (如 Alt+Shift+D 瀏覽器功能)
+            e.preventDefault();
+            const target = document.getElementById(actions[key].id);
+            if (target) {
+                if (actions[key].type === 'click') target.click();
+                else if (actions[key].type === 'focus') target.focus();
+            }
+        }
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // 修正問題 A：解決 PDF Worker 跨域讀取問題
-            // 使用 fetch 將 worker 腳本下載並轉為 Blob URL，繞過同源限制
+            // 修正問題 A：PDF.js 穩定性與中文支援 (動態版本控制)
             if (typeof pdfjsLib !== 'undefined') {
-                const workerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.js';
+                const pdfVersion = pdfjsLib.version;
+                const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
+                
+                // 動態產生 Worker URL 與 CMap URL
+                const workerUrl = `${baseUrl}/build/pdf.worker.min.js`;
+                pdfCMapUrl = `${baseUrl}/cmaps/`; // 供 extractTextFromPDF 使用
+
                 try {
                     const response = await fetch(workerUrl);
                     if (response.ok) {
                         const blob = await response.blob();
                         pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
                     } else {
-                        // 若 fetch 失敗則回退到直接網址
                          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
                     }
                 } catch (e) {
@@ -621,7 +676,7 @@
         document.getElementById('chat-output').innerHTML = ""; 
         document.getElementById('user-input').value = "";
         selectedFile = null;
-        document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+U)";
+        document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
         document.getElementById('file-input').value = "";
         
         toggleExportButtons(false);
@@ -1207,7 +1262,7 @@
     }
 
     function showHelp() {
-        alert("Alt+S: 設定\nAlt+U: 上傳\nAlt+N: 新對話\nAlt+K: 傳送\nAlt+V: 語音\nAlt+T/H: 匯出\nAlt+P: 暫停傳送");
+        alert("所有快速鍵均改為 Alt+Shift+字母，以防止瀏覽器衝突。\n\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+T/H: 匯出\nAlt+Shift+P: 暫停傳送");
     }
 
     function copyResult() {
@@ -1280,7 +1335,7 @@
             showTransientStatus("檔案讀取錯誤: " + e.message, "error");
             playAudioCue('error');
             selectedFile = null;
-            document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+U)";
+            document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
         }
     }
 
@@ -1290,8 +1345,8 @@
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ 
                 data: arrayBuffer,
-                // 關鍵修正：統一使用 jsdelivr 的 cmaps 路徑，確保支援中文
-                cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
+                // 修正：使用動態產生的版本一致 CMap URL
+                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
                 cMapPacked: true,
             }).promise;
             
@@ -1419,7 +1474,7 @@
             
             document.getElementById('user-input').value = "";
             document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
-            document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+U)";
+            document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
             
@@ -1538,9 +1593,11 @@
                 headers['HTTP-Referer'] = window.location.href; 
                 headers['X-Title'] = 'AI Assistant';
                 
+                // 修正問題 B：OpenRouter 聯網搜尋參數
+                // 使用 plugins 參數而非修改模型名稱
                 const useOnline = document.getElementById('openrouter-web-search').checked;
-                if (useOnline && !model.endsWith(':online')) {
-                    model += ':online';
+                if (useOnline) {
+                    body.plugins = [{ id: "web" }];
                 }
             }
             else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
@@ -1560,6 +1617,7 @@
             messages.push({ role: "user", content: currentContent });
 
             body = {
+                ...body, // 合併先前的屬性 (如 plugins)
                 model: model,
                 messages: messages,
                 temperature: 0.7
