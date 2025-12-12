@@ -304,7 +304,7 @@
                 📄 PDF 完整閱讀 (智能偵測啟動)
             </button>
             <small style="display:block; margin: 5px 0 15px 0; color:#ccc;">
-                * 說明：自動偵測文字版或圖像版。若為圖像版，將啟動 Gemini 2.5 OCR 完整讀取。
+                * 說明：自動偵測文字版或圖像版。若為圖像版，將自動切換至 Gemini 進行完整讀取 (即便上方選擇其他模型)。
             </small>
 
             <div class="row">
@@ -640,36 +640,42 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
 
     // 統一的 AI 處理函式 (針對 PDF 工具)
     async function performAIProcessing(fileObj, mode, textData) {
-        const apiKey = document.getElementById('api-key').value;
-        if (!apiKey) throw new Error("請先設定 API Key");
+        // [修正] 預設讀取當前設定
+        let targetProvider = document.getElementById('provider-select').value;
+        let targetApiKey = document.getElementById('api-key').value;
+        let targetModel = currentActiveModelId;
+
+        // [修正] 若為 PDF 檔案 (OCR 模式)，強制使用 Gemini，因為其他 API 不支援 application/pdf
+        if (fileObj && fileObj.type === 'application/pdf') {
+            console.log("PDF 檔案處理：強制切換至 Gemini 模式");
+            targetProvider = 'gemini';
+            
+            // 嘗試讀取 Gemini 專用 Key (若先前已儲存)
+            const storedGeminiKey = localStorage.getItem('gemini_key');
+            
+            // 如果當前介面本來就是 Gemini，就用介面上的 Key
+            if (document.getElementById('provider-select').value === 'gemini') {
+                targetApiKey = document.getElementById('api-key').value;
+            } else if (storedGeminiKey) {
+                targetApiKey = storedGeminiKey;
+            } else {
+                throw new Error("處理 PDF 必須使用 Google Gemini 服務。請先在設定中切換至 'Google Gemini'，輸入 API Key 並儲存，然後再試。");
+            }
+
+            // [修正] 強制使用 Flash 模型 (速度最快且支援 PDF)
+            targetModel = "gemini-1.5-flash"; 
+        }
+
+        if (!targetApiKey) throw new Error("請先設定 API Key");
         
         // 選擇 Prompt
         let systemPrompt = "";
         if (mode === "ocr_strict") systemPrompt = PDF_OCR_PROMPT;
         else if (mode === "translate_only" || mode === "translate_text") systemPrompt = PDF_TRANSLATE_PROMPT;
 
-        const pKey = document.getElementById('provider-select').value;
-        const controller = new AbortController(); // 不設 timeout 或設很長
+        const controller = new AbortController(); 
         
         let contentPart = [];
-        
-        // 準備資料
-        if (mode === "translate_text" && textData) {
-            contentPart = textData; // 純文字
-        } else if (fileObj) {
-            // 轉 Base64
-            const base64 = await readFileAsBase64(fileObj);
-            const mime = fileObj.type;
-            
-            if (pKey === 'gemini') {
-                // Gemini 特殊結構
-                // 這裡我們暫時借用 callAI 的邏輯，但為了嚴格控制 Prompt，我們手動組裝
-                // 若要沿用 callAI，需暫存原本的 System Prompt
-            }
-        }
-
-        // 為了簡化，我們修改 callAI 讓它支援臨時 System Prompt override
-        // 這裡我們直接呼叫底層 callAI，但傳入特殊標記讓它知道要用特殊 Prompt
         
         // 準備傳給 callAI 的文字輸入
         let userText = "";
@@ -686,16 +692,17 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             mimeType = fileObj.type;
         }
 
-        // 呼叫 callAI，這裡我們用一個 trick：
-        // 將 systemPrompt 塞入 history 的第一條 (System role)，並暫時清空原本的 DOM prompt value
+        // 這裡我們直接呼叫 callAI，並傳入 override 的設定
+        // 先暫存 System Prompt
         const originalPromptVal = document.getElementById('system-prompt').value;
-        document.getElementById('system-prompt').value = systemPrompt; // 替換全域變數供 callAI 讀取
+        document.getElementById('system-prompt').value = systemPrompt; 
 
         try {
             // 清空 history 確保沒有干擾
             chatHistory = []; 
             
-            const response = await callAI(pKey, userText, fileData, mimeType, controller.signal);
+            // [修正] 傳入特定的 Provider, Key, Model
+            const response = await callAI(targetProvider, userText, fileData, mimeType, controller.signal, targetModel, targetApiKey);
             
             addMessage('assistant', response);
             playAudioCue('success');
@@ -1108,6 +1115,7 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
                 }
             }
 
+            // 一般傳送不強制使用 override，除非使用者自己在 PDF 工具箱觸發
             const response = await callAI(pKey, finalInputText, skipFileSend ? null : fileData, mimeType, controller.signal);
             
             inputField.value = "";
@@ -1118,7 +1126,7 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             const aiMsg = addMessage('assistant', response);
             aiMsg.focus();
             
-            chatHistory.push({ role: "user", content: finalInputText }); // 簡化歷史紀錄
+            chatHistory.push({ role: "user", content: finalInputText }); 
             chatHistory.push({ role: "assistant", content: response });
             
             playAudioCue('success'); showReadyStatus();
@@ -1130,11 +1138,13 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
         }
     }
 
-    async function callAI(provider, text, fileBase64, mimeType, signal) {
-        const apiKey = document.getElementById('api-key').value;
-        // 優先使用全域變數 (可能被 handlePDFTool 暫時覆寫)，否則用設定值
+    // [修正] callAI 支援 overrideModel 和 overrideKey (讓 PDF 工具箱可強制使用 Gemini)
+    async function callAI(provider, text, fileBase64, mimeType, signal, overrideModel = null, overrideKey = null) {
+        // 若有傳入 overrideKey 則優先使用，否則抓介面上的
+        const apiKey = overrideKey || document.getElementById('api-key').value;
         const prompt = document.getElementById('system-prompt').value;
-        const model = currentActiveModelId;
+        // 若有傳入 overrideModel 則優先使用
+        const model = overrideModel || currentActiveModelId;
 
         if (!apiKey) throw new Error("請輸入 API Key");
 
@@ -1149,17 +1159,18 @@ Translate the full content into natural, fluent Traditional Chinese (Hong Kong s
             if (fileBase64) parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
             parts.push({ text: text });
             
-            // 注意：這裡不傳送 chatHistory，以確保單次指令的純淨性 (針對 PDF 工具)
-            // 若是一般對話，chatHistory 由 handleSubmit 管理，但這裡為了簡化結構，我們直接構建 contents
-            // 若需要歷史紀錄，應在此處合併 chatHistory
-            
             // 修正：為了同時支援 Tool 和一般對話，我們檢查 chatHistory 是否為空
-            // 如果是 PDF Tool 呼叫，chatHistory 會被清空
             let contents = [];
             if (chatHistory.length > 0) {
-                 // 轉換 chatHistory 格式給 Gemini
-                 // ... (省略複雜轉換，假設主要用於單次查詢)
-                 contents.push({ role: "user", parts: parts }); // 暫時僅送最後一次
+                 // 這裡只簡單實作：若有 history，假設這是對話模式，直接 append
+                 // 但為了簡化，若 overrideModel 存在 (代表是 Tool 模式)，我們不使用 history
+                 if (overrideModel) {
+                     contents.push({ role: "user", parts: parts });
+                 } else {
+                     // 這裡應該要處理 chatHistory 轉 Gemini 格式，但為了極簡版，暫時忽略完整歷史轉制
+                     // 實務上建議使用最新的 contents
+                     contents.push({ role: "user", parts: parts });
+                 }
             } else {
                  contents.push({ role: "user", parts: parts });
             }
