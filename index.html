@@ -386,7 +386,6 @@
 3. **精簡**：重點置前，避免冗長。
 `;
 
-    // OCR Strict Mode
     const PDF_OCR_PROMPT = `
 # SYSTEM INSTRUCTION: HIGH-PRECISION OCR MODE
 
@@ -408,7 +407,6 @@ Input: [Image/PDF]
 Output: [Raw String of Text Only]
 `;
 
-    // Translate Strict Mode
     const PDF_TRANSLATE_PROMPT = `
 # SYSTEM INSTRUCTION: PROFESSIONAL DOCUMENT TRANSLATION
 
@@ -429,7 +427,7 @@ Input: [Source Text/Document]
 Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v9_pdf_fix";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v10_pdf_stable";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -494,16 +492,13 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // PDF.js Worker Configuration (Version 4.10.38)
+            // PDF.js Configuration (Version 4.10.38)
             if (typeof pdfjsLib !== 'undefined') {
-                const pdfVersion = '4.10.38'; // 固定穩定版本
+                const pdfVersion = '4.10.38'; 
                 const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
                 const workerUrl = `${baseUrl}/build/pdf.worker.min.js`;
-                
-                // 設定 CMap Url (關鍵：解決中文空白問題)
-                pdfCMapUrl = `${baseUrl}/cmaps/`;
+                pdfCMapUrl = `${baseUrl}/cmaps/`; // 保留 CMap 設定以支援中文
 
-                // 配置 Worker
                 try {
                     const response = await fetch(workerUrl);
                     if (response.ok) {
@@ -558,7 +553,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     });
 
-    // ... (其他音效與 UI 函式保持不變，為節省篇幅省略重複部分，重點在 PDF 提取) ...
     function playAudioCue(type) {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
@@ -603,10 +597,13 @@ Output: [Translated Text in Traditional Chinese (HK)]
             }
 
             updateStatusBar("正在嘗試本機提取文字...", "busy");
-            // [修正點] 使用修正後的 extractTextFromPDF
+            // [修正點] 使用移除 standardFontDataUrl 的提取函式
             const localText = await extractTextFromPDF(file, true); 
 
-            if (localText && localText.length > 50) {
+            // [修正點] 計算非空白字元，判定是否為文字版 (門檻降低至 20)
+            const charCount = localText ? localText.replace(/\s/g, '').length : 0;
+
+            if (charCount > 20) {
                 if (forceTranslate) {
                     updateStatusBar("本機提取成功，正在傳送給 AI 進行完整翻譯...", "busy");
                     await performAIProcessing(null, "translate_text", localText);
@@ -618,7 +615,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     output.lastChild.focus();
                 }
             } else {
-                updateStatusBar("本機提取文字過少，轉用 AI (Gemini 2.5) 完整識別...", "busy");
+                updateStatusBar(`本機提取文字過少 (${charCount} 字)，轉用 AI (Gemini 2.5) 完整識別...`, "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
             }
         } catch (e) {
@@ -661,20 +658,18 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    /* 關鍵修正：PDF 文字提取 (多語言 CMap 支援) */
+    /* 修正後的文字提取函式：移除 standardFontDataUrl，保留 cMapUrl */
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
-            
-            // 明確指定與引入版本一致的 CMap 與字型路徑
             const pdfVersion = '4.10.38'; 
             const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
             
             const loadingTask = pdfjsLib.getDocument({
                 data: arrayBuffer,
-                cMapUrl: `${baseUrl}/cmaps/`, // 必須：解決中文空白問題
-                cMapPacked: true,
-                standardFontDataUrl: `${baseUrl}/standard_fonts/` // 建議：解決缺字問題
+                cMapUrl: `${baseUrl}/cmaps/`, 
+                cMapPacked: true
+                // 注意：已移除 standardFontDataUrl 以避免網路問題導致崩潰
             });
 
             const pdf = await loadingTask.promise;
@@ -687,7 +682,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 
-                // 智能文字拼接：區分中英文，避免中文被加空格
                 let pageStr = "";
                 let lastItemStr = "";
                 
@@ -695,21 +689,17 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     const str = item.str;
                     if (!str) continue;
 
-                    // 簡單 CJK 檢測 (包含繁簡中、日、韓)
                     const isCurrentCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(str[0]);
                     const isLastCJK = lastItemStr ? /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lastItemStr.slice(-1)) : false;
                     
                     if (lastItemStr && !item.hasEOL) {
-                        // 如果前一個字和這一個字都不是 CJK，則補空格 (英文單字間)
-                        // 若其中一個是 CJK，則不補空格 (緊密排列)
                         if (!isLastCJK && !isCurrentCJK) {
                             pageStr += " ";
                         }
                     }
                     
                     pageStr += str;
-                    if (item.hasEOL) pageStr += "\n"; // 保留換行
-                    
+                    if (item.hasEOL) pageStr += "\n";
                     lastItemStr = str;
                 }
 
@@ -720,7 +710,8 @@ Output: [Translated Text in Traditional Chinese (HK)]
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
-            return null; // 失敗時回傳 null 觸發 AI OCR
+            // 回傳 null 以觸發 AI OCR 備援
+            return null; 
         }
     }
 
@@ -871,7 +862,8 @@ Output: [Translated Text in Traditional Chinese (HK)]
             if(selectedFile) {
                 if(selectedFile.type==='application/pdf') {
                     const pdfText = await extractTextFromPDF(selectedFile);
-                    if(pdfText && pdfText.length>50) { input=`[PDF]:\n${pdfText}\n\n${txt}`; skipFile=true; }
+                    const charCount = pdfText ? pdfText.replace(/\s/g, '').length : 0;
+                    if(charCount > 20) { input=`[PDF]:\n${pdfText}\n\n${txt}`; skipFile=true; }
                     else { fileData=await readFileAsBase64(selectedFile); mime=selectedFile.type; }
                 } else { fileData=await readFileAsBase64(selectedFile); mime=selectedFile.type; }
             }
