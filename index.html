@@ -11,11 +11,24 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 修正：改用 PDF.js v3.11.174 (最後一個穩定支援 UMD 全域變數的版本) -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-
-    <!-- 引入 Tesseract.js (OCR 引擎) -->
+    <!-- 引入 Tesseract.js (OCR 引擎 v5) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+    <!-- 
+        修正：正確引入最新版 PDF.js (v4.10.38) 
+        使用 ES Module 方式引入，並掛載到 window 以供全域使用
+    -->
+    <script type="module">
+        import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
+        
+        // 設定 Worker (必須與主程式版本一致)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
+        
+        // 將 pdfjsLib 掛載到全域變數，讓下方的普通 script 可以存取
+        window.pdfjsLib = pdfjsLib;
+        
+        console.log("PDF.js v4.10.38 Loaded successfully via ES Module.");
+    </script>
     
     <style>
         :root {
@@ -531,8 +544,9 @@
     let allCurrentModels = [];
     
     // 全域變數供 PDF Worker 使用
-    let pdfWorkerUrl = "";
-    let pdfCMapUrl = "";
+    // 雖然模組已引入，但為了 extractTextFromPDF 我們仍需全域路徑參考
+    const pdfWorkerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
+    const pdfCMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
 
     // 修正：iOS Safari 全域音效解鎖
     function unlockAudioContext() {
@@ -592,29 +606,6 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // 修正問題：使用 PDF.js v3.11.174
-            if (typeof pdfjsLib !== 'undefined') {
-                const pdfVersion = pdfjsLib.version; // Should be 3.11.174
-                const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
-                
-                // 動態產生 Worker URL 與 CMap URL
-                const workerUrl = `${baseUrl}/build/pdf.worker.min.js`;
-                pdfCMapUrl = `${baseUrl}/cmaps/`; // 供 extractTextFromPDF 使用
-
-                try {
-                    const response = await fetch(workerUrl);
-                    if (response.ok) {
-                        const blob = await response.blob();
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-                    } else {
-                         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-                    }
-                } catch (e) {
-                    console.warn("Worker Blob fetch failed, using direct URL", e);
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-                }
-            }
-
             if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
                 ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => {
                     localStorage.removeItem(`${p}_prompt`);
@@ -1398,11 +1389,12 @@
         try {
             // 使用 window.pdfjsLib 確保全域變數
             const pdfjs = window.pdfjsLib; 
-            
+            if (!pdfjs) throw new Error("PDF.js 尚未載入完成，請稍候重試。");
+
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjs.getDocument({ 
                 data: arrayBuffer,
-                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+                cMapUrl: pdfCMapUrl,
                 cMapPacked: true,
             }).promise;
             
@@ -1418,7 +1410,7 @@
             // 如果第一頁文字極少 (<50字)，假設為掃描/圖像 PDF，啟用 OCR
             if (rawText.length < 50) {
                 mode = "OCR";
-                updateStatusBar(`檢測為圖像 PDF，啟動 OCR 引擎...`, 'busy');
+                updateStatusBar(`檢測為圖像 PDF，啟動 OCR 引擎 (高畫質模式)...`, 'busy');
             } else {
                 updateStatusBar(`檢測為文字 PDF，開始提取...`, 'busy');
             }
@@ -1428,7 +1420,6 @@
             if (mode === "TEXT") {
                 // 純文字提取模式
                 for (let i = 1; i <= totalPages; i++) {
-                    // 修正：狀態列更新
                     updateStatusBar(`正在提取文字 (Text Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
@@ -1472,26 +1463,30 @@
         }
     }
 
-    // OCR 執行邏輯 (使用 Tesseract.js)
+    // OCR 執行邏輯 (使用 Tesseract.js - 極致畫質版)
     async function performOCR(pdf, totalPages) {
         let fullText = "";
         
         // 建立 Worker (繁中 + 英文)
-        // 使用 Tesseract.js v5 語法
-        const worker = await Tesseract.createWorker('chi_tra+eng');
+        const worker = await Tesseract.createWorker(['chi_tra', 'eng']);
         
         for (let i = 1; i <= totalPages; i++) {
-            // 修正：狀態列更新
-            updateStatusBar(`正在進行影像辨識 (OCR Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+            updateStatusBar(`正在進行高畫質影像辨識 (OCR)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
             
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 3.0 }); // 關鍵：3.0倍超取樣，大幅提升準確度
+            
+            // 關鍵修正：將 Scale 設為 4.0 (約 288 DPI)，解決模糊亂碼
+            const viewport = page.getViewport({ scale: 4.0 }); 
             
             // 建立 Canvas
             const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
+            const context = canvas.getContext('2d', { willReadFrequently: true });
             canvas.height = viewport.height;
             canvas.width = viewport.width;
+            
+            // 關鍵修正：填充白色背景 (解決透明圖層變黑問題)
+            context.fillStyle = "#FFFFFF";
+            context.fillRect(0, 0, canvas.width, canvas.height);
             
             // 渲染 PDF 到 Canvas
             await page.render({ canvasContext: context, viewport: viewport }).promise;
@@ -1510,11 +1505,12 @@
     async function extractTextFromPDF(file) {
         try {
             const pdfjs = window.pdfjsLib; // 確保引用全域
+            if (!pdfjs) return null; // 若模組未載入，降級處理
+
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjs.getDocument({ 
                 data: arrayBuffer,
-                // 修正：使用動態產生的版本一致 CMap URL
-                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+                cMapUrl: pdfCMapUrl,
                 cMapPacked: true,
             }).promise;
             
