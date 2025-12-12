@@ -11,8 +11,11 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 修正：統一使用 jsdelivr 引入 PDF.js 核心 -->
+    <!-- 引入 PDF.js 核心 -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
+
+    <!-- 引入 Tesseract.js (OCR 引擎) -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     
     <style>
         :root {
@@ -27,6 +30,7 @@
             --button-text: #000000;
             --status-bg: #222;            /* 狀態列背景 */
             --danger-color: #ff4444;      /* 危險操作色 */
+            --info-color: #008800;        /* 資訊色 */
         }
 
         body {
@@ -94,6 +98,13 @@
             background-color: #550000;
             color: #ffcccc;
             border-color: #ff4444;
+        }
+        
+        /* 資訊按鈕 (PDF 完整讀取) */
+        button.info-btn {
+            background-color: #004400;
+            color: #ccffcc;
+            border-color: #00ff00;
         }
 
         /* 錄音中按鈕樣式 */
@@ -343,10 +354,17 @@
         <!-- 第一排：功能按鈕 -->
         <div class="row">
             <input type="file" id="file-input" class="visually-hidden" accept="*/*" onchange="handleFileSelect()">
+            <!-- 專用 PDF 完整讀取輸入 -->
+            <input type="file" id="pdf-full-input" class="visually-hidden" accept="application/pdf" onchange="handlePdfFullRead(event)">
             
             <!-- 上傳按鈕 -->
             <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" aria-keyshortcuts="Alt+Shift+U" style="flex:1;">
                 選擇檔案 (Alt+Shift+U)
+            </button>
+            
+            <!-- PDF 完整顯示按鈕 -->
+            <button type="button" id="pdf-full-btn" class="info-btn" onclick="document.getElementById('pdf-full-input').click()" aria-keyshortcuts="Alt+Shift+F" style="flex:1;" title="PDF 完整顯示 (不經 AI)">
+                PDF 完整閱讀 (Alt+Shift+F)
             </button>
             
             <!-- 新對話按鈕 -->
@@ -545,6 +563,7 @@
             't': { id: 'export-txt-btn', type: 'click' },   // 匯出 TXT
             'h': { id: 'export-html-btn', type: 'click' },  // 匯出 HTML
             'u': { id: 'upload-btn', type: 'click' },       // 上傳
+            'f': { id: 'pdf-full-btn', type: 'click' },     // PDF 完整顯示 (New)
             'n': { id: 'new-chat-btn', type: 'click' },     // 新對話
             'p': { id: 'pause-send', type: 'click' },       // 暫停傳送
             'v': { id: 'voice-btn', type: 'click' },        // 語音
@@ -1278,7 +1297,7 @@
     }
 
     function showHelp() {
-        alert("所有快速鍵均改為 Alt+Shift+字母，以防止瀏覽器衝突。\n\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+T/H: 匯出\nAlt+Shift+P: 暫停傳送\nAlt+Shift+R: 複製最新回應");
+        alert("所有快速鍵均改為 Alt+Shift+字母，以防止瀏覽器衝突。\n\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+F: PDF 完整閱讀 (OCR)\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+T/H: 匯出\nAlt+Shift+P: 暫停傳送\nAlt+Shift+R: 複製最新回應");
     }
 
     function copyResult() {
@@ -1355,7 +1374,134 @@
         }
     }
 
-    // 修正：統一 CMap 來源，解決中文 PDF 提取失敗問題
+    // ------------------------------------------------------------
+    // 新增功能：PDF 完整閱讀 (OCR/Text Extract) - 無 AI
+    // ------------------------------------------------------------
+    async function handlePdfFullRead(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // 清除上一個對話，準備顯示結果
+        resetConversation(); 
+        
+        // UI 更新
+        playAudioCue('start');
+        const btn = document.getElementById('pdf-full-btn');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "讀取中...";
+        
+        // 顯示在對話區
+        addMessage('user', `請求讀取 PDF 文件內容: ${file.name}`);
+        const resultDiv = addMessage('assistant', '正在初始化 PDF 讀取引擎...');
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ 
+                data: arrayBuffer,
+                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
+                cMapPacked: true,
+            }).promise;
+            
+            // 步驟一：判斷是文字版還是圖像版
+            // 讀取第一頁來判斷
+            const firstPage = await pdf.getPage(1);
+            const textContent = await firstPage.getTextContent();
+            const rawText = textContent.items.map(item => item.str).join('').trim();
+            
+            let extractedText = "";
+            let mode = "TEXT"; // 預設為文字模式
+            
+            // 如果第一頁文字極少 (<50字)，假設為掃描/圖像 PDF，啟用 OCR
+            if (rawText.length < 50) {
+                mode = "OCR";
+                updateStatusBar(`檢測為圖像 PDF，啟動 OCR 引擎...`, 'busy');
+            } else {
+                updateStatusBar(`檢測為文字 PDF，開始提取...`, 'busy');
+            }
+            
+            const totalPages = pdf.numPages;
+            
+            if (mode === "TEXT") {
+                // 純文字提取模式
+                for (let i = 1; i <= totalPages; i++) {
+                    updateStatusBar(`正在提取文字... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    const pageText = content.items.map(item => item.str).join(' ');
+                    extractedText += `\n--- 第 ${i} 頁 ---\n${pageText}\n`;
+                }
+            } else {
+                // OCR 模式 (Tesseract.js)
+                extractedText = await performOCR(pdf, totalPages);
+            }
+            
+            // 顯示結果
+            const finalDisplay = `### PDF 完整內容讀取報告\n**檔名**: ${file.name}\n**模式**: ${mode === 'OCR' ? '圖像辨識 (OCR)' : '文字提取'}\n**頁數**: ${totalPages}\n\n---\n\n${extractedText}`;
+            
+            // 更新結果區
+            const contentDiv = resultDiv.querySelector('.markdown-body');
+            contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(finalDisplay));
+            
+            // 更新按鈕狀態
+            const miniCopyBtn = resultDiv.querySelector('.mini-copy-btn');
+            if (miniCopyBtn) {
+                miniCopyBtn.onclick = function() {
+                    navigator.clipboard.writeText(contentDiv.innerText)
+                        .then(() => showTransientStatus("已複製 PDF 內容"));
+                };
+            }
+            
+            showTransientStatus("PDF 讀取完成");
+            playAudioCue('success');
+
+        } catch (e) {
+            console.error("PDF Full Read Error", e);
+            const contentDiv = resultDiv.querySelector('.markdown-body');
+            contentDiv.innerText = `發生錯誤: ${e.message}`;
+            updateStatusBar("讀取失敗", "error");
+            playAudioCue('error');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
+            document.getElementById('pdf-full-input').value = ""; // 重置 input
+        }
+    }
+
+    // OCR 執行邏輯 (使用 Tesseract.js)
+    async function performOCR(pdf, totalPages) {
+        let fullText = "";
+        
+        // 建立 Worker (繁中 + 英文)
+        // 使用 Tesseract.js v5 語法
+        const worker = await Tesseract.createWorker('chi_tra+eng');
+        
+        for (let i = 1; i <= totalPages; i++) {
+            updateStatusBar(`正在進行 OCR 辨識... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+            
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 3.0 }); // 關鍵：3.0倍超取樣，大幅提升準確度
+            
+            // 建立 Canvas
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            // 渲染 PDF 到 Canvas
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            
+            // 執行 OCR
+            const { data: { text } } = await worker.recognize(canvas);
+            
+            fullText += `\n--- 第 ${i} 頁 (OCR) ---\n${text}\n`;
+        }
+        
+        await worker.terminate();
+        return fullText;
+    }
+
+    // 舊有的 PDF 提取 (保留給 Chat 用)
     async function extractTextFromPDF(file) {
         try {
             const arrayBuffer = await file.arrayBuffer();
