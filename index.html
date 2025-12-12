@@ -292,14 +292,14 @@
             <!-- 語音設定區塊 -->
             <div class="settings-subsection">
                 <h3>語音輸入設定</h3>
-                <label for="voice-engine">語音引擎:</label>
+                <label for="voice-engine">語音辨識引擎:</label>
                 <select id="voice-engine" onchange="saveVoiceSettings()">
                     <option value="browser">瀏覽器原生 (免費，品質普通)</option>
                     <option value="openai">OpenAI Whisper (高準確，需付費)</option>
                     <option value="groq">Groq Whisper (極速，需 Key)</option>
                 </select>
                 
-                <label for="voice-api-key">語音專用 API Key (選填):</label>
+                <label for="voice-api-key">語音辨識專用 API Key (選填):</label>
                 <input type="password" id="voice-api-key" placeholder="若留空，將嘗試使用主要 API Key" autocomplete="off" onchange="saveVoiceSettings()">
                 <small style="color:#aaa; display:block; margin-bottom:5px;">* 若使用 Gemini 聊天但想用 Whisper 語音，請在此填入 OpenAI/Groq Key。</small>
             </div>
@@ -541,7 +541,7 @@
         
         const actions = {
             's': { id: 'settings-summary', type: 'click' }, // 設定
-            'c': { id: 'copy-btn', type: 'click' },         // 複製
+            'c': { id: 'copy-btn', type: 'click' },         // 複製全部
             't': { id: 'export-txt-btn', type: 'click' },   // 匯出 TXT
             'h': { id: 'export-html-btn', type: 'click' },  // 匯出 HTML
             'u': { id: 'upload-btn', type: 'click' },       // 上傳
@@ -549,13 +549,21 @@
             'p': { id: 'pause-send', type: 'click' },       // 暫停傳送
             'v': { id: 'voice-btn', type: 'click' },        // 語音
             'k': { id: 'submit-btn', type: 'click' },       // 傳送
-            'i': { id: 'user-input', type: 'focus' }        // 輸入框焦點
+            'i': { id: 'user-input', type: 'focus' },       // 輸入框焦點
+            'r': { selector: '.latest-copy-btn', type: 'click' } // 複製最新回應
         };
 
         if (actions[key]) {
             // 防止瀏覽器預設行為 (如 Alt+Shift+D 瀏覽器功能)
             e.preventDefault();
-            const target = document.getElementById(actions[key].id);
+            let target;
+            
+            if (actions[key].id) {
+                target = document.getElementById(actions[key].id);
+            } else if (actions[key].selector) {
+                target = document.querySelector(actions[key].selector);
+            }
+
             if (target) {
                 if (actions[key].type === 'click') target.click();
                 else if (actions[key].type === 'focus') target.focus();
@@ -998,8 +1006,16 @@
             
             const miniCopyBtn = document.createElement('button');
             miniCopyBtn.className = 'mini-copy-btn';
-            miniCopyBtn.innerText = '複製此回應';
-            miniCopyBtn.ariaLabel = '複製此回應';
+            
+            // 移除舊的「最新」標記
+            document.querySelectorAll('.latest-copy-btn').forEach(btn => btn.classList.remove('latest-copy-btn'));
+            // 標記這個按鈕為最新
+            miniCopyBtn.classList.add('latest-copy-btn');
+            
+            // 更新文字與說明，提示快速鍵
+            miniCopyBtn.innerText = '複製此回應 (Alt+Shift+R)';
+            miniCopyBtn.ariaLabel = '複製此回應 (Alt+Shift+R)';
+            
             miniCopyBtn.onclick = function() {
                 navigator.clipboard.writeText(contentDiv.innerText)
                     .then(() => showTransientStatus("已複製該回應"));
@@ -1262,7 +1278,7 @@
     }
 
     function showHelp() {
-        alert("所有快速鍵均改為 Alt+Shift+字母，以防止瀏覽器衝突。\n\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+T/H: 匯出\nAlt+Shift+P: 暫停傳送");
+        alert("所有快速鍵均改為 Alt+Shift+字母，以防止瀏覽器衝突。\n\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+T/H: 匯出\nAlt+Shift+P: 暫停傳送\nAlt+Shift+R: 複製最新回應");
     }
 
     function copyResult() {
