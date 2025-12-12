@@ -394,6 +394,9 @@
 </footer>
 
 <script>
+    // 解決 pdfjsLib not defined 問題：顯式宣告全域變數引用
+    const pdfjsLib = window.pdfjsLib;
+
     // 全域錯誤處理：防止程式卡死
     window.onerror = function(message, source, lineno, colno, error) {
         const statusBar = document.getElementById('status-bar');
@@ -1425,7 +1428,7 @@
             if (mode === "TEXT") {
                 // 純文字提取模式
                 for (let i = 1; i <= totalPages; i++) {
-                    updateStatusBar(`正在提取文字... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+                    updateStatusBar(`正在提取文字 (Text Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
                     const pageText = content.items.map(item => item.str).join(' ');
@@ -1474,10 +1477,10 @@
         
         // 建立 Worker (繁中 + 英文)
         // 使用 Tesseract.js v5 語法
-        const worker = await Tesseract.createWorker('chi_tra+eng');
+        const worker = await Tesseract.createWorker(['chi_tra', 'eng']);
         
         for (let i = 1; i <= totalPages; i++) {
-            updateStatusBar(`正在進行 OCR 辨識... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+            updateStatusBar(`正在進行影像辨識 (OCR Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
             
             const page = await pdf.getPage(i);
             const viewport = page.getViewport({ scale: 3.0 }); // 關鍵：3.0倍超取樣，大幅提升準確度
