@@ -11,8 +11,8 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 引入 PDF.js 核心 -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
+    <!-- 修正：改用 PDF.js v3.11.174 (最後一個穩定支援 UMD 全域變數的版本) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 
     <!-- 引入 Tesseract.js (OCR 引擎) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -394,9 +394,6 @@
 </footer>
 
 <script>
-    // 解決 pdfjsLib not defined 問題：顯式宣告全域變數引用
-    const pdfjsLib = window.pdfjsLib;
-
     // 全域錯誤處理：防止程式卡死
     window.onerror = function(message, source, lineno, colno, error) {
         const statusBar = document.getElementById('status-bar');
@@ -595,9 +592,9 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // 修正問題 A：PDF.js 穩定性與中文支援 (動態版本控制)
+            // 修正問題：使用 PDF.js v3.11.174
             if (typeof pdfjsLib !== 'undefined') {
-                const pdfVersion = pdfjsLib.version;
+                const pdfVersion = pdfjsLib.version; // Should be 3.11.174
                 const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
                 
                 // 動態產生 Worker URL 與 CMap URL
@@ -1399,10 +1396,13 @@
         const resultDiv = addMessage('assistant', '正在初始化 PDF 讀取引擎...');
         
         try {
+            // 使用 window.pdfjsLib 確保全域變數
+            const pdfjs = window.pdfjsLib; 
+            
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ 
+            const pdf = await pdfjs.getDocument({ 
                 data: arrayBuffer,
-                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
+                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
                 cMapPacked: true,
             }).promise;
             
@@ -1428,6 +1428,7 @@
             if (mode === "TEXT") {
                 // 純文字提取模式
                 for (let i = 1; i <= totalPages; i++) {
+                    // 修正：狀態列更新
                     updateStatusBar(`正在提取文字 (Text Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
@@ -1477,9 +1478,10 @@
         
         // 建立 Worker (繁中 + 英文)
         // 使用 Tesseract.js v5 語法
-        const worker = await Tesseract.createWorker(['chi_tra', 'eng']);
+        const worker = await Tesseract.createWorker('chi_tra+eng');
         
         for (let i = 1; i <= totalPages; i++) {
+            // 修正：狀態列更新
             updateStatusBar(`正在進行影像辨識 (OCR Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
             
             const page = await pdf.getPage(i);
@@ -1507,11 +1509,12 @@
     // 舊有的 PDF 提取 (保留給 Chat 用)
     async function extractTextFromPDF(file) {
         try {
+            const pdfjs = window.pdfjsLib; // 確保引用全域
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ 
+            const pdf = await pdfjs.getDocument({ 
                 data: arrayBuffer,
                 // 修正：使用動態產生的版本一致 CMap URL
-                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/',
+                cMapUrl: pdfCMapUrl || 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
                 cMapPacked: true,
             }).promise;
             
