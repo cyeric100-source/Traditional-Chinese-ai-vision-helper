@@ -1,9 +1,11 @@
+<!-- START OF FILE 60ai_studio_code_v2.html -->
+
 <!DOCTYPE html>
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025 OCR 強化版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
@@ -15,16 +17,16 @@
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <!-- 
-        修正：正確引入最新版 PDF.js (v4.10.38) 
+        引入最新版 PDF.js (v4.10.38) 
         使用 ES Module 方式引入，並掛載到 window 以供全域使用
     -->
     <script type="module">
         import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
         
-        // 設定 Worker (必須與主程式版本一致)
+        // 設定 Worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
         
-        // 將 pdfjsLib 掛載到全域變數，讓下方的普通 script 可以存取
+        // 將 pdfjsLib 掛載到全域變數
         window.pdfjsLib = pdfjsLib;
         
         console.log("PDF.js v4.10.38 Loaded successfully via ES Module.");
@@ -58,7 +60,6 @@
         .container {
             max-width: 900px;
             margin: 0 auto;
-            /* 底部預留更多空間給長輸入框 */
             padding: 10px 10px 450px 10px;
         }
 
@@ -72,19 +73,17 @@
             display: inline-block;
         }
 
-        /* 通用輸入元件樣式 */
         input, select, textarea {
             width: 100%; padding: 12px; margin-top: 5px; margin-bottom: 10px;
             background: var(--input-bg); border: 2px solid var(--border-color);
             color: var(--text-color); font-size: 1.1rem; border-radius: 6px; box-sizing: border-box;
         }
 
-        /* 特別針對設定區的角色指令，確保能顯示大量文字 */
         #system-prompt {
-            min-height: 300px; /* 增加高度以容納長指令 */
-            resize: vertical;  /* 允許使用者手動拉長 */
-            overflow-y: auto;  /* 超出時顯示捲軸 */
-            font-family: monospace; /* 等寬字體方便閱讀指令結構 */
+            min-height: 300px;
+            resize: vertical;
+            overflow-y: auto;
+            font-family: monospace;
             line-height: 1.4;
         }
         
@@ -98,7 +97,6 @@
         button:disabled { filter: grayscale(100%); opacity: 0.7; cursor: not-allowed; }
         button.secondary { background-color: #333; color: #fff; border-color: #777; }
         
-        /* 單則複製按鈕 (小) */
         button.mini-copy-btn {
             background-color: #333; color: #fff; border: 1px solid #777;
             padding: 6px 12px; font-size: 0.9rem; margin-top: 10px;
@@ -106,21 +104,18 @@
         }
         button.mini-copy-btn:hover { background-color: #555; }
         
-        /* 危險按鈕 (新對話) */
         button.danger {
             background-color: #550000;
             color: #ffcccc;
             border-color: #ff4444;
         }
         
-        /* 資訊按鈕 (PDF 完整讀取) */
         button.info-btn {
             background-color: #004400;
             color: #ccffcc;
             border-color: #00ff00;
         }
 
-        /* 錄音中按鈕樣式 */
         button.recording {
             background-color: #ff0000 !important;
             color: #ffffff !important;
@@ -137,15 +132,12 @@
             100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
 
-        /* 無障礙修正：減少動畫 */
         @media (prefers-reduced-motion: reduce) {
             button.recording, button.processing {
                 animation: none !important;
                 box-shadow: 0 0 0 4px rgba(255, 0, 0, 0.5);
             }
-            * {
-                transition: none !important;
-            }
+            * { transition: none !important; }
         }
 
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
@@ -153,14 +145,10 @@
         
         .message-area { min-height: 100px; padding-bottom: 20px; }
         
-        /* 訊息區塊樣式 */
         .message {
             background: #111; padding: 15px; margin-bottom: 25px;
             border-left: 5px solid var(--border-color);
-            /* 確保長文字會換行，不會撐爆螢幕 */
-            overflow-wrap: break-word; 
-            word-wrap: break-word; 
-            word-break: break-word;
+            overflow-wrap: break-word; word-wrap: break-word; word-break: break-word;
         }
         .message:focus { outline: none; border-left: 8px solid var(--accent-color); background: #222; }
 
@@ -178,13 +166,9 @@
         .message.error { border-left-color: #ff0000; background: #330000; }
         .message.error h1.msg-heading { color: #ff5555; }
 
-        /* Markdown 內容樣式優化 */
-        .markdown-body {
-            line-height: 1.7;
-            overflow-wrap: break-word;
-        }
+        .markdown-body { line-height: 1.7; overflow-wrap: break-word; }
         .markdown-body h1, .markdown-body h2 { color: #88CCFF; border-bottom: none; margin-top: 1.5em; }
-        .markdown-body p { margin-bottom: 10px; white-space: pre-wrap; } /* 保留換行 */
+        .markdown-body p { margin-bottom: 10px; white-space: pre-wrap; }
         .markdown-body pre { 
             background: #222; padding: 10px; 
             overflow-x: auto; border: 1px solid #444; 
@@ -198,7 +182,6 @@
             padding: 10px; z-index: 100;
         }
 
-        /* 修改 Row 的對齊方式，適應多行輸入框與按鈕 */
         .row { display: flex; gap: 10px; margin-bottom: 8px; align-items: flex-end; }
         
         .check-btn {
@@ -212,22 +195,14 @@
         }
         .check-btn input { width: 20px; height: 20px; margin: 0 8px 0 0; }
 
-        /* 輸入框樣式優化 */
         #user-input {
             margin: 0;
-            min-height: 80px;  /* 預設高度 */
-            max-height: 200px; /* 最大高度，避免蓋住整個螢幕 */
-            resize: vertical;  /* 允許使用者調整 */
-            overflow-y: auto;
-            flex: 1; /* 佔滿剩餘空間 */
-            transition: border-color 0.2s;
+            min-height: 80px; max-height: 200px;
+            resize: vertical; overflow-y: auto;
+            flex: 1; transition: border-color 0.2s;
         }
-        #user-input.dragover {
-            border-color: var(--accent-color) !important;
-            background-color: #222;
-        }
+        #user-input.dragover { border-color: var(--accent-color) !important; background-color: #222; }
 
-        /* 狀態列 */
         #status-bar {
             position: fixed; top: 0; left: 0; right: 0;
             background: var(--status-bg); color: #fff;
@@ -245,13 +220,11 @@
         
         #custom-model-wrapper { margin-top: -5px; margin-bottom: 10px; }
         
-        /* Whisper 設定區樣式 */
         .settings-subsection {
             border: 1px solid #444; padding: 10px; border-radius: 6px; margin: 10px 0; background: #222;
         }
         .settings-subsection h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: var(--accent-color); }
 
-        /* 匯出按鈕區 */
         .export-actions { margin-bottom: 20px; display: flex; gap: 10px; }
         .export-actions button { margin-top: 0; font-size: 1rem; padding: 8px; }
     </style>
@@ -262,7 +235,7 @@
 <div id="status-bar" role="status" aria-live="assertive" aria-atomic="true">系統初始化中...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 OCR 強化版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -284,7 +257,6 @@
             <label for="api-key">主要 API Key:</label>
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
-            <!-- 新增模型篩選功能 -->
             <label for="model-filter-input">篩選模型 (即時搜尋):</label>
             <input type="text" id="model-filter-input" placeholder="輸入關鍵字篩選 (如: gemini, latest)..." oninput="handleModelFilter()">
 
@@ -298,7 +270,6 @@
                 <input type="text" id="custom-model-input" placeholder="手動輸入模型 ID" onchange="handleCustomInputChange()">
             </div>
 
-            <!-- OpenRouter 專用設定 -->
             <div id="openrouter-settings" class="hidden settings-subsection">
                 <h3>OpenRouter 搜尋設定</h3>
                 <label class="check-btn">
@@ -307,13 +278,11 @@
                 </label>
             </div>
             
-            <!-- Enter 鍵設定 (預設勾選) -->
             <label class="check-btn" style="flex:none; width:auto; margin-bottom: 10px;">
                 <input type="checkbox" id="enter-to-send" checked>
                 <span>按 Enter 鍵傳送 (取消勾選則 Enter 為換行)</span>
             </label>
 
-            <!-- 語音設定區塊 -->
             <div class="settings-subsection">
                 <h3>語音輸入設定</h3>
                 <label for="voice-engine">語音辨識引擎:</label>
@@ -328,7 +297,6 @@
                 <small style="color:#aaa; display:block; margin-bottom:5px;">* 若使用 Gemini 聊天但想用 Whisper 語音，請在此填入 OpenAI/Groq Key。</small>
             </div>
 
-            <!-- Timeout 設定 -->
             <label for="timeout-setting">回應逾時 (秒):</label>
             <input type="number" id="timeout-setting" value="120" min="5" step="5">
 
@@ -370,22 +338,18 @@
             <!-- 專用 PDF 完整讀取輸入 -->
             <input type="file" id="pdf-full-input" class="visually-hidden" accept="application/pdf" onchange="handlePdfFullRead(event)">
             
-            <!-- 上傳按鈕 -->
             <button type="button" id="upload-btn" class="secondary" onclick="document.getElementById('file-input').click()" aria-keyshortcuts="Alt+Shift+U" style="flex:1;">
                 選擇檔案 (Alt+Shift+U)
             </button>
             
-            <!-- PDF 完整顯示按鈕 -->
             <button type="button" id="pdf-full-btn" class="info-btn" onclick="document.getElementById('pdf-full-input').click()" aria-keyshortcuts="Alt+Shift+F" style="flex:1;" title="PDF 完整顯示 (不經 AI)">
                 PDF 完整閱讀 (Alt+Shift+F)
             </button>
             
-            <!-- 新對話按鈕 -->
             <button type="button" id="new-chat-btn" class="danger" onclick="resetConversation()" aria-keyshortcuts="Alt+Shift+N" style="flex:1;">
                 清除對話 (Alt+Shift+N)
             </button>
 
-            <!-- 暫停傳送開關 -->
             <label class="check-btn" style="flex:1;">
                 <input type="checkbox" id="pause-send" aria-keyshortcuts="Alt+Shift+P">
                 <span>暫停傳送 (Alt+Shift+P)</span>
@@ -394,20 +358,16 @@
         
         <!-- 第二排：輸入與發送 -->
         <div class="row">
-            <!-- 語音輸入按鈕 -->
             <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" aria-keyshortcuts="Alt+Shift+V" style="width: auto; padding: 0 15px; height: 80px; margin:0; font-size: 1.2rem;" title="語音輸入 (Alt+Shift+V)" aria-label="語音輸入 (Alt+Shift+V)">語音輸入</button>
             
-            <!-- 文字輸入框 (支援 DnD) -->
             <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" aria-keyshortcuts="Alt+Shift+I" autocomplete="off" rows="3" aria-label="輸入訊息區"></textarea>
             
-            <!-- 發送按鈕 -->
             <button type="submit" id="submit-btn" aria-keyshortcuts="Alt+Shift+K" style="width: 80px; height: 80px; margin:0;" title="發送 (Alt+Shift+K)">傳送</button>
         </div>
     </form>
 </footer>
 
 <script>
-    // 全域錯誤處理：防止程式卡死
     window.onerror = function(message, source, lineno, colno, error) {
         const statusBar = document.getElementById('status-bar');
         if (statusBar) {
@@ -429,107 +389,54 @@
 
 2.  **無障礙格式 (Accessibility Format)**：
     *   **Markdown 結構**：必須善用 \`#\` (標題)、\`-\` (清單) 來建立清晰的階層，方便讀屏軟體導航。
-    *   **符號禁令**：**嚴格禁止**輸出 \`[ ]\` (中括號) 或 \`{ }\` (大括號) 以及任何可能干擾朗讀節奏的裝飾性符號。引用來源時直接敘述即可，不要使用 \`[1]\` 這種標註。
+    *   **符號禁令**：**嚴格禁止**輸出 \`[ ]\` (中括號) 或 \`{ }\` (大括號) 以及任何可能干擾朗讀節奏的裝飾性符號。
 
 3.  **內容風格**：
-    *   在資訊豐富的前提下，文字必須精簡洗鍊 (Concise)，避免冗言贅字。重點必須置於最前方。
+    *   在資訊豐富的前提下，文字必須精簡洗鍊 (Concise)，避免冗言贅字。重點必須置於最前方。`;
 
----
-
-# 任務執行邏輯 (Task Execution Logic)
-
-你必須先判斷用戶的輸入類型（文字請求 vs 圖片輸入），並對應以下流程：
-
-## 任務一：網路搜尋請求
-當用戶要求搜尋或詢問需要即時資訊的問題時：
-1.  **多語言檢索**：你必須在後台使用繁體中文、英文、日文及相關語系（如查詢歐洲產品時使用法文/義大利文）進行廣泛搜尋。
-2.  **資訊整合**：匯總官方規格、權威媒體評測、真實用戶評價（優缺點）。
-3.  **輸出**：整理為一篇結構分明、分段合理的說明文章。
-
-## 任務二：影像分析 (Visual Analysis)
-當用戶上傳圖片時，請依照下列分類邏輯處理：
-
-### A. 若圖片主要為「文字」
-1.  **全力辨識**：運用高階視覺能力辨識所有可見文字。若影像模糊、傾斜或昏暗，請推測語意以補全內容。
-2.  **轉譯輸出**：直接列出文字內容。若非中文，請直接提供繁體中文翻譯與解釋，無需保留原文。
-
-### B. 若圖片主要為「動植物」
-1.  **物種鑑定**：根據外觀特徵識別物種。
-2.  **背景調查**：聯網搜尋其學名、俗名、習性、分佈與特徵。
-3.  **輸出**：撰寫一篇包含物種名稱與詳細特性的說明文章。
-
-### C. 若圖片主要為「產品包裝 (盒/罐/瓶)」
-1.  **資訊提取**：讀取包裝上的品牌、型號及關鍵文字。
-2.  **深度研究**：以此資訊為關鍵字上網搜尋，包含用途、使用方法、詳細的用戶評測和評論、優缺點。
-3.  **輸出**：結合「視覺資訊」與「網路資訊」，撰寫一篇完整的產品說明導購文。
-
-### D. 若圖片為「螢幕截圖 (Screenshot)」(UI/UX 模式)
-1.  **焦點報告**：首要指出目前被選取、反白或處於焦點 (Focus) 的項目。
-2.  **介面掃描**：條列畫面上其他可見項目。
-3.  **狀態過濾**：
-    *   可操作選項（如 Checkbox/Switch）：僅報告「正面狀態」（如：已勾選、已開啟）。
-    *   若選項為未勾選/未啟用，**僅讀出項目名稱**，不要報告其狀態。
-
-### E. 若圖片為「品牌或機構標識 (Logo)」
-1.  **識別**：辨認 Logo 所屬的品牌或組織。若無法一眼辨識，必須利用視覺特徵上網反向搜尋。
-2.  **簡介**：提供該單位的背景簡介。
-
-### F. 其他場景 (環境、物件、人物等)
-1.  **場景描述**：提供客觀、詳盡的環境掃描。先講整體佈局，再描述重要細節。
-2.  **人物描述**：推測性別、年齡、表情。若為公眾人物或可識別人物，請提供姓名。
-3. 若收到 PDF 或其他文件，請讀取文件內容並且進行分析，然後顯示詳細的主要內容。
-4. 約收到影片、聲音或其他影音媒體檔案或網址，請將影音的視覺和語音內容進行分析，然後顯示詳細的主要內容。`;
-
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v7_final";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v7_ocr_enhanced";
 
     const PROVIDERS = {
         gemini: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "gemini-1.5-flash", 
             canFetch: true,
-            models: ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-2.5-pro"],
+            models: ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-2.0-pro-exp"],
             listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}"
         },
         openrouter: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "openai/gpt-4o",
             canFetch: true,
-            models: [
-                "openai/gpt-5.1",
-                "openai/gpt-4o",
-                "anthropic/claude-4-sonnet",
-                "meta-llama/llama-4-maverick", 
-                "google/gemini-2.5-flash", 
-                "qwen/qwen2.5-vl-72b-instruct"
-            ],
+            models: ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-pro-1.5", "meta-llama/llama-3.1-405b"],
             listUrl: "https://openrouter.ai/api/v1/models"
         },
         mistral: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "mistral-large-latest",
             canFetch: true,
-            models: ["mistral-large-latest", "pixtral-large-latest", "ministral-8b-latest", "mistral-small-latest"],
+            models: ["mistral-large-latest", "pixtral-large-latest", "ministral-8b-latest"],
             listUrl: "https://api.mistral.ai/v1/models"
         },
         openai: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "gpt-4o",
             canFetch: true, 
-            models: ["gpt-4o", "gpt-5.1", "gpt-4o-mini"],
+            models: ["gpt-4o", "gpt-4o-mini", "o1-preview"],
             listUrl: "https://api.openai.com/v1/models"
         },
         groq: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "llama-3.3-70b-versatile", 
             canFetch: true, 
-            models: ["llama-3.3-70b-versatile", "llama-4-maverick-17b-128e-instruct", "llama-3.2-90b-vision-preview"], 
+            models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama-3.2-90b-vision-preview"], 
             listUrl: "https://api.groq.com/openai/v1/models"
         },
         perplexity: {
             prompt: DEFAULT_PROMPT,
             defaultModel: "sonar-pro",
             canFetch: false,
-            models: ["sonar-pro", "sonar", "sonar-reasoning-pro", "sonar-deep-research"]
+            models: ["sonar-pro", "sonar", "sonar-reasoning-pro"]
         }
     };
 
@@ -540,20 +447,15 @@
     let audioChunks = [];
     let chatHistory = [];
     let audioContext = null;
-    // 新增：儲存當前供應商的所有模型，供篩選用
     let allCurrentModels = [];
     
-    // 全域變數供 PDF Worker 使用
-    // 雖然模組已引入，但為了 extractTextFromPDF 我們仍需全域路徑參考
-    const pdfWorkerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
+    // PDF.js worker reference handled by module import, but needed for some internal logic
     const pdfCMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
 
-    // 修正：iOS Safari 全域音效解鎖
     function unlockAudioContext() {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
         if (audioContext.state === 'suspended') {
             audioContext.resume().then(() => {
-                // 解鎖成功後移除監聽器
                 document.removeEventListener('click', unlockAudioContext);
                 document.removeEventListener('touchstart', unlockAudioContext);
             });
@@ -562,40 +464,32 @@
     document.addEventListener('click', unlockAudioContext);
     document.addEventListener('touchstart', unlockAudioContext);
     
-    // 修正：全域鍵盤快速鍵監聽器 (取代 accesskey)
     document.addEventListener('keydown', handleGlobalShortcuts);
 
     function handleGlobalShortcuts(e) {
-        // 僅偵測 Alt + Shift + 字母
         if (!e.altKey || !e.shiftKey) return;
-
         const key = e.key.toLowerCase();
         
         const actions = {
-            's': { id: 'settings-summary', type: 'click' }, // 設定
-            'c': { id: 'copy-btn', type: 'click' },         // 複製全部
-            't': { id: 'export-txt-btn', type: 'click' },   // 匯出 TXT
-            'h': { id: 'export-html-btn', type: 'click' },  // 匯出 HTML
-            'u': { id: 'upload-btn', type: 'click' },       // 上傳
-            'f': { id: 'pdf-full-btn', type: 'click' },     // PDF 完整顯示 (New)
-            'n': { id: 'new-chat-btn', type: 'click' },     // 新對話
-            'p': { id: 'pause-send', type: 'click' },       // 暫停傳送
-            'v': { id: 'voice-btn', type: 'click' },        // 語音
-            'k': { id: 'submit-btn', type: 'click' },       // 傳送
-            'i': { id: 'user-input', type: 'focus' },       // 輸入框焦點
-            'r': { selector: '.latest-copy-btn', type: 'click' } // 複製最新回應
+            's': { id: 'settings-summary', type: 'click' },
+            'c': { id: 'copy-btn', type: 'click' },
+            't': { id: 'export-txt-btn', type: 'click' },
+            'h': { id: 'export-html-btn', type: 'click' },
+            'u': { id: 'upload-btn', type: 'click' },
+            'f': { id: 'pdf-full-btn', type: 'click' },
+            'n': { id: 'new-chat-btn', type: 'click' },
+            'p': { id: 'pause-send', type: 'click' },
+            'v': { id: 'voice-btn', type: 'click' },
+            'k': { id: 'submit-btn', type: 'click' },
+            'i': { id: 'user-input', type: 'focus' },
+            'r': { selector: '.latest-copy-btn', type: 'click' }
         };
 
         if (actions[key]) {
-            // 防止瀏覽器預設行為 (如 Alt+Shift+D 瀏覽器功能)
             e.preventDefault();
             let target;
-            
-            if (actions[key].id) {
-                target = document.getElementById(actions[key].id);
-            } else if (actions[key].selector) {
-                target = document.querySelector(actions[key].selector);
-            }
+            if (actions[key].id) target = document.getElementById(actions[key].id);
+            else if (actions[key].selector) target = document.querySelector(actions[key].selector);
 
             if (target) {
                 if (actions[key].type === 'click') target.click();
@@ -696,7 +590,6 @@
         selectedFile = null;
         document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
         document.getElementById('file-input').value = "";
-        
         toggleExportButtons(false);
         showTransientStatus("對話紀錄已清除 (新對話)", "info");
     }
@@ -743,7 +636,6 @@
             };
 
             recognition.onerror = function(event) {
-                console.error(event.error);
                 showTransientStatus('語音辨識錯誤: ' + event.error, 'error');
                 playAudioCue('error');
                 stopVoiceInput();
@@ -751,8 +643,6 @@
             recognition.onend = function() {
                 stopVoiceInput();
             };
-        } else {
-            console.warn("Browser speech not supported");
         }
     }
 
@@ -780,38 +670,18 @@
         } else {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // 修正問題 B：iOS Safari 相容性
-                // 自動偵測瀏覽器支援的 MIME Type，優先使用 Opus (WebM) 或 MP4
-                const mimeTypes = [
-                    'audio/webm;codecs=opus', 
-                    'audio/webm', 
-                    'audio/mp4', 
-                    'audio/aac', 
-                    'audio/ogg'
-                ];
-                
+                const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
                 let selectedMime = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
-                
-                // 建立 Recorder 時帶入支援的 MIME Type
                 const options = selectedMime ? { mimeType: selectedMime } : undefined;
+                
                 mediaRecorder = new MediaRecorder(stream, options);
-                
-                // 將偵測到的 MIME 存入物件，供 onstop 使用
                 mediaRecorder.detectedMimeType = selectedMime || '';
-                
                 audioChunks = [];
                 
-                mediaRecorder.ondataavailable = event => {
-                    audioChunks.push(event.data);
-                };
-
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
                 mediaRecorder.onstop = async () => {
-                    // 使用相同的 MIME Type 建立 Blob
                     const type = mediaRecorder.detectedMimeType || 'audio/webm';
                     const audioBlob = new Blob(audioChunks, { type: type }); 
-                    
-                    // 傳遞副檔名資訊給處理函式
                     await processWhisperAudio(audioBlob, engine, type);
                     stream.getTracks().forEach(track => track.stop());
                 };
@@ -833,20 +703,16 @@
         if (!apiKey) apiKey = document.getElementById('api-key').value.trim();
 
         if (!apiKey) {
-            alert("使用 Whisper 語音需要 API Key (OpenAI 或 Groq)。\n請在設定中填寫。");
+            alert("使用 Whisper 語音需要 API Key (OpenAI 或 Groq)。");
             btn.classList.remove('processing');
             showReadyStatus();
             return;
         }
 
         const formData = new FormData();
-        
-        // 修正：根據 MIME Type 決定正確的副檔名，確保 API 能識別
         let ext = 'webm';
         if (mimeType && mimeType.includes('mp4')) ext = 'mp4';
         else if (mimeType && mimeType.includes('aac')) ext = 'aac';
-        else if (mimeType && mimeType.includes('ogg')) ext = 'ogg';
-        else if (mimeType && mimeType.includes('wav')) ext = 'wav';
 
         formData.append('file', blob, `recording.${ext}`);
         
@@ -866,21 +732,14 @@
         try {
             const res = await fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`
-                },
+                headers: { 'Authorization': `Bearer ${apiKey}` },
                 body: formData
             });
-            
             if (!res.ok) throw new Error(await res.text());
-            
             const data = await res.json();
-            const text = data.text;
-            
-            if (text) {
+            if (data.text) {
                 const input = document.getElementById('user-input');
-                const currentVal = input.value;
-                input.value = currentVal ? currentVal + " " + text : text;
+                input.value = input.value ? input.value + " " + data.text : data.text;
                 showTransientStatus("辨識完成");
             }
         } catch (e) {
@@ -897,9 +756,7 @@
         btn.classList.remove('recording');
         btn.classList.remove('processing');
         const bar = document.getElementById('status-bar');
-        if (bar.innerText.includes('聆聽') || bar.innerText.includes('錄音')) {
-            showReadyStatus();
-        }
+        if (bar.innerText.includes('聆聽') || bar.innerText.includes('錄音')) showReadyStatus();
     }
 
     function saveVoiceSettings() {
@@ -926,40 +783,22 @@
 
     function initDragAndDrop() {
         const dropZone = document.getElementById('user-input');
-        
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
         });
-
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        dropZone.addEventListener('dragover', () => {
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+        dropZone.addEventListener('dragover', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
         dropZone.addEventListener('drop', (e) => {
             dropZone.classList.remove('dragover');
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            if (files.length > 0) {
-                handleFileSelect(files[0]);
-            }
+            if (e.dataTransfer.files.length > 0) handleFileSelect(e.dataTransfer.files[0]);
         });
     }
 
     function initEnterKey() {
-        const input = document.getElementById('user-input');
-        input.addEventListener('keydown', (e) => {
-            const enterToSend = document.getElementById('enter-to-send').checked;
+        document.getElementById('user-input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-                if (enterToSend) {
+                if (document.getElementById('enter-to-send').checked) {
                     e.preventDefault();
                     document.getElementById('submit-btn').click();
                 }
@@ -970,7 +809,6 @@
     function updateStatusBar(text, state = 'ready') {
         const bar = document.getElementById('status-bar');
         bar.innerText = text;
-        
         bar.className = '';
         if (state === 'ready') bar.classList.add('ready');
         else if (state === 'busy') bar.classList.add('busy');
@@ -983,7 +821,7 @@
 
     function showTransientStatus(msg, type = 'success') {
         updateStatusBar(msg, type === 'error' ? 'error' : 'ready');
-        if (type === 'success' || type === 'error' || type === 'info') {
+        if (['success', 'error', 'info'].includes(type)) {
             setTimeout(() => {
                 const bar = document.getElementById('status-bar');
                 if (!bar.classList.contains('busy') && !document.getElementById('voice-btn').classList.contains('recording')) {
@@ -1000,7 +838,6 @@
 
         const header = document.createElement('h1');
         header.className = 'msg-heading';
-        
         const contentDiv = document.createElement('div');
         contentDiv.className = 'markdown-body';
 
@@ -1010,28 +847,19 @@
         } else if (role === 'assistant') {
             header.innerText = '回應結果：';
             contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(content));
-            
             document.getElementById('copy-btn').classList.remove('hidden');
             toggleExportButtons(true);
             
             const miniCopyBtn = document.createElement('button');
-            miniCopyBtn.className = 'mini-copy-btn';
+            miniCopyBtn.className = 'mini-copy-btn latest-copy-btn';
+            document.querySelectorAll('.latest-copy-btn').forEach(b => { if(b !== miniCopyBtn) b.classList.remove('latest-copy-btn'); });
             
-            // 移除舊的「最新」標記
-            document.querySelectorAll('.latest-copy-btn').forEach(btn => btn.classList.remove('latest-copy-btn'));
-            // 標記這個按鈕為最新
-            miniCopyBtn.classList.add('latest-copy-btn');
-            
-            // 更新文字與說明，提示快速鍵
             miniCopyBtn.innerText = '複製此回應 (Alt+Shift+R)';
             miniCopyBtn.ariaLabel = '複製此回應 (Alt+Shift+R)';
-            
             miniCopyBtn.onclick = function() {
-                navigator.clipboard.writeText(contentDiv.innerText)
-                    .then(() => showTransientStatus("已複製該回應"));
+                navigator.clipboard.writeText(contentDiv.innerText).then(() => showTransientStatus("已複製該回應"));
             };
             div.appendChild(miniCopyBtn);
-
         } else {
             header.innerText = (role === 'error') ? '發生錯誤：' : '系統訊息：';
             contentDiv.innerText = content;
@@ -1039,77 +867,53 @@
 
         div.appendChild(header);
         div.appendChild(contentDiv);
-        
-        const output = document.getElementById('chat-output');
-        output.appendChild(div);
-        
+        document.getElementById('chat-output').appendChild(div);
         return div; 
     }
 
     function toggleExportButtons(show) {
-        const list = ['copy-btn', 'export-txt-btn', 'export-html-btn'];
-        list.forEach(id => {
-            if(show) document.getElementById(id).classList.remove('hidden');
-            else document.getElementById(id).classList.add('hidden');
+        ['copy-btn', 'export-txt-btn', 'export-html-btn'].forEach(id => {
+            const el = document.getElementById(id);
+            if(show) el.classList.remove('hidden'); else el.classList.add('hidden');
         });
     }
 
     function handleProviderChange(save = true) {
         const pKey = document.getElementById('provider-select').value;
         const conf = PROVIDERS[pKey];
-        
         if (!conf) return;
 
         document.getElementById('api-key').value = localStorage.getItem(`${pKey}_key`) || "";
         document.getElementById('system-prompt').value = localStorage.getItem(`${pKey}_prompt`) || conf.prompt;
         
-        if (pKey === 'openrouter') {
-            document.getElementById('openrouter-settings').classList.remove('hidden');
-        } else {
-            document.getElementById('openrouter-settings').classList.add('hidden');
-        }
+        if (pKey === 'openrouter') document.getElementById('openrouter-settings').classList.remove('hidden');
+        else document.getElementById('openrouter-settings').classList.add('hidden');
         
         const cachedListStr = localStorage.getItem(`${pKey}_model_list`);
         let modelList = conf.models;
-        
         if (cachedListStr) {
             try {
                 const parsedList = JSON.parse(cachedListStr);
-                if (Array.isArray(parsedList) && parsedList.length > 0) {
-                    modelList = parsedList;
-                }
-            } catch (e) {
-                console.error("無法解析快取清單", e);
-            }
+                if (Array.isArray(parsedList) && parsedList.length > 0) modelList = parsedList;
+            } catch (e) { console.error(e); }
         }
-
-        // 儲存全域模型清單，供篩選用
         allCurrentModels = modelList;
-
-        // 切換服務商時，清空篩選輸入框
         document.getElementById('model-filter-input').value = "";
-
+        
         const savedModel = localStorage.getItem(`${pKey}_model`) || conf.defaultModel;
         currentActiveModelId = savedModel;
         
-        // 透過篩選邏輯來渲染清單 (即時更新)
         handleModelFilter();
-        
         document.getElementById('refresh-btn').style.display = conf.canFetch ? 'block' : 'none';
-        
         resetConversation();
         
         if (save) localStorage.setItem('provider', pKey);
         showReadyStatus();
     }
 
-    // 新增：處理模型篩選邏輯
     function handleModelFilter() {
         const filterText = document.getElementById('model-filter-input').value.toLowerCase();
-        
-        // 若輸入框為空，顯示所有模型；否則過濾包含關鍵字的模型
         const filteredList = allCurrentModels.filter(m => m.toLowerCase().includes(filterText));
-        
         updateModelSelect(filteredList, currentActiveModelId);
     }
 
@@ -1117,7 +921,6 @@
         const select = document.getElementById('model-select');
         select.innerHTML = "";
         let found = false;
-        
         models.forEach(m => {
             let opt = document.createElement('option');
             opt.value = m; opt.innerText = m;
@@ -1136,7 +939,6 @@
             select.value = targetModel; 
             customWrapper.classList.add('hidden');
         } else {
-            // 如果目前的模型因為篩選被隱藏，或是本來就是自定義模型，則顯示自定義輸入框
             select.value = "CUSTOM_ENTRY"; 
             customWrapper.classList.remove('hidden'); 
             customInput.value = targetModel;
@@ -1147,13 +949,10 @@
         const pKey = document.getElementById('provider-select').value;
         let apiKey = document.getElementById('api-key').value.trim();
         const conf = PROVIDERS[pKey];
-
         if (!conf.canFetch) return;
         
-        if (!apiKey && (pKey === 'gemini' || pKey === 'groq' || pKey === 'openai' || pKey === 'mistral')) {
+        if (!apiKey && ['gemini', 'groq', 'openai', 'mistral'].includes(pKey)) {
             alert("請先輸入 API Key 才能更新清單");
-            document.getElementById('api-key').focus();
-            playAudioCue('error');
             return;
         }
 
@@ -1164,66 +963,52 @@
 
         try {
             let newModels = [];
+            let res, data;
 
             if (pKey === 'openrouter') {
-                const res = await fetch("https://openrouter.ai/api/v1/models");
-                const data = await res.json();
-                if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
+                res = await fetch("https://openrouter.ai/api/v1/models");
+                data = await res.json();
+                if (data.data) newModels = data.data.sort((a,b)=> (b.created||0)-(a.created||0)).map(m=>m.id);
             } 
             else if (pKey === 'groq') {
-                const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-                const data = await res.json();
-                if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
+                res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+                data = await res.json();
+                if (data.data) newModels = data.data.map(m=>m.id);
             }
             else if (pKey === 'mistral') {
-                const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-                const data = await res.json();
-                if (data.data) newModels = data.data.sort((a, b) => (b.created || 0) - (a.created || 0)).map(m => m.id);
+                res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+                data = await res.json();
+                if (data.data) newModels = data.data.map(m=>m.id);
             }
             else if (pKey === 'gemini') {
-                const res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
+                res = await fetch(conf.listUrl.replace('{KEY}', apiKey));
                 if (!res.ok) throw new Error(await res.text());
-                const data = await res.json();
+                data = await res.json();
                 if (data.models) {
                     newModels = data.models
-                        .filter(m => {
-                            const methods = m.supportedGenerationMethods || [];
-                            return methods.includes("generateContent");
-                        })
-                        .filter(m => !m.name.toLowerCase().includes("embedding"))
-                        .sort((a, b) => b.name.localeCompare(a.name))
+                        .filter(m => m.supportedGenerationMethods?.includes("generateContent") && !m.name.includes("embedding"))
+                        .sort((a,b)=> b.name.localeCompare(a.name))
                         .map(m => m.name.replace("models/", ""));
                 }
             }
             else if (pKey === 'openai') {
-                const res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-                const data = await res.json();
-                if (data.data) {
-                    newModels = data.data
-                        .filter(m => m.id.startsWith('gpt'))
-                        .sort((a, b) => (b.created || 0) - (a.created || 0))
-                        .map(m => m.id);
-                }
+                res = await fetch(conf.listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+                data = await res.json();
+                if (data.data) newModels = data.data.filter(m=>m.id.startsWith('gpt')).map(m=>m.id);
             }
 
             if (newModels.length > 0) {
                 localStorage.setItem(`${pKey}_model_list`, JSON.stringify(newModels));
-                
-                // 更新全域模型變數
                 allCurrentModels = newModels;
-                // 重新渲染並套用篩選
                 handleModelFilter();
-
                 currentActiveModelId = newModels[0]; 
                 resetConversation();
-                showTransientStatus(`已成功更新模型清單，共找到 ${newModels.length} 個模型。`);
+                showTransientStatus(`已更新清單，找到 ${newModels.length} 個模型。`);
                 playAudioCue('success');
             } else {
                 showTransientStatus("未找到合適模型", "error");
-                playAudioCue('error');
             }
         } catch (e) {
-            console.error(e);
             showTransientStatus(`更新失敗: ${e.message}`, "error");
             playAudioCue('error');
         } finally {
@@ -1253,23 +1038,18 @@
 
     function saveSettings() {
         const pKey = document.getElementById('provider-select').value;
-        if (document.getElementById('model-select').value === "CUSTOM_ENTRY") {
-            currentActiveModelId = document.getElementById('custom-model-input').value.trim();
-        } else {
-            currentActiveModelId = document.getElementById('model-select').value;
-        }
+        currentActiveModelId = (document.getElementById('model-select').value === "CUSTOM_ENTRY") ?
+             document.getElementById('custom-model-input').value.trim() : document.getElementById('model-select').value;
+
         localStorage.setItem(`${pKey}_key`, document.getElementById('api-key').value.trim());
         localStorage.setItem(`${pKey}_model`, currentActiveModelId);
-        
         localStorage.setItem(`${pKey}_prompt`, document.getElementById('system-prompt').value);
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
         localStorage.setItem('enter_to_send', document.getElementById('enter-to-send').checked);
         localStorage.setItem('openrouter_web_search', document.getElementById('openrouter-web-search').checked);
-        
         saveVoiceSettings();
         
-        const pName = pKey.charAt(0).toUpperCase() + pKey.slice(1);
-        showTransientStatus(`設定已儲存: ${pName} (${currentActiveModelId})`); 
+        showTransientStatus(`設定已儲存: ${pKey}`); 
         playAudioCue('success');
         document.getElementById('settings-area').open = false;
     }
@@ -1280,116 +1060,151 @@
         document.getElementById('timeout-setting').value = 120;
         localStorage.removeItem(`${pKey}_model`);
         localStorage.removeItem(`${pKey}_prompt`);
-        
-        localStorage.removeItem(`${pKey}_model_list`);
-
         handleProviderChange(true);
         showTransientStatus("已恢復預設");
     }
 
     function showHelp() {
-        alert("所有快速鍵均改為 Alt+Shift+字母，以防止瀏覽器衝突。\n\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+F: PDF 完整閱讀 (OCR)\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+T/H: 匯出\nAlt+Shift+P: 暫停傳送\nAlt+Shift+R: 複製最新回應");
+        alert("快速鍵:\nAlt+Shift+S: 設定\nAlt+Shift+U: 上傳\nAlt+Shift+F: PDF 完整閱讀\nAlt+Shift+N: 新對話\nAlt+Shift+K: 傳送\nAlt+Shift+V: 語音\nAlt+Shift+P: 暫停傳送\nAlt+Shift+R: 複製回應");
     }
 
     function copyResult() {
-        const output = document.getElementById('chat-output');
-        const text = output.innerText;
-        navigator.clipboard.writeText(text).then(() => showTransientStatus("已複製全部歷史紀錄"));
+        navigator.clipboard.writeText(document.getElementById('chat-output').innerText)
+            .then(() => showTransientStatus("已複製全部歷史紀錄"));
     }
 
     function exportChat(format) {
         const output = document.getElementById('chat-output');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        let content = "";
-        let mimeType = "";
-        let extension = "";
+        let content = "", mimeType = "", extension = "";
 
         if (format === 'html') {
             const css = document.querySelector('style').innerHTML;
-            content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>對話紀錄 ${timestamp}</title><style>${css} body { padding: 20px; }</style></head><body><div class="container"><h1 class="app-title">對話紀錄備份</h1><div class="message-area">${output.innerHTML}</div></div></body></html>`;
-            mimeType = "text/html";
-            extension = "html";
+            content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>對話紀錄</title><style>${css} body { padding: 20px; }</style></head><body><div class="container">${output.innerHTML}</div></body></html>`;
+            mimeType = "text/html"; extension = "html";
         } else {
             content = output.innerText;
-            mimeType = "text/plain";
-            extension = "txt";
+            mimeType = "text/plain"; extension = "txt";
         }
 
         const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `chat-export-${timestamp}.${extension}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        a.href = url; a.download = `chat-export-${timestamp}.${extension}`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
-        showTransientStatus(`已匯出 ${extension.toUpperCase()} 檔案`);
+        showTransientStatus(`已匯出 ${extension.toUpperCase()}`);
     }
 
-    // 修正：針對中文檔名的防呆與錯誤處理
     function handleFileSelect(fileObj) {
         try {
-            if (fileObj) {
-                selectedFile = fileObj;
-            } else {
+            if (fileObj) selectedFile = fileObj;
+            else {
                 const fileInput = document.getElementById('file-input');
-                if (fileInput.files.length > 0) {
-                    selectedFile = fileInput.files[0];
-                }
+                if (fileInput.files.length > 0) selectedFile = fileInput.files[0];
             }
 
             if (selectedFile) {
-                // 檢查檔案大小
-                if (selectedFile.size === 0) {
-                    throw new Error("檔案大小為 0，無法讀取。");
-                }
-
-                // 顯示檔名 (即使包含特殊字元，瀏覽器也能正確顯示，無需過度編碼)
+                if (selectedFile.size === 0) throw new Error("檔案大小為 0。");
                 document.getElementById('upload-btn').innerText = `已選取: ${selectedFile.name}`;
-                document.getElementById('user-input').setAttribute('aria-label', `輸入訊息區，已附加檔案：${selectedFile.name}`);
+                document.getElementById('user-input').setAttribute('aria-label', `已附加檔案：${selectedFile.name}`);
                 showTransientStatus(`已加入檔案`);
                 playAudioCue('success');
-                
-                if (!document.getElementById('pause-send').checked) {
-                    setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
-                }
+                if (!document.getElementById('pause-send').checked) setTimeout(() => document.querySelector('footer form').requestSubmit(), 500);
             }
         } catch (e) {
-            console.error("File Select Error:", e);
             showTransientStatus("檔案讀取錯誤: " + e.message, "error");
             playAudioCue('error');
-            selectedFile = null;
-            document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
         }
     }
 
-    // ------------------------------------------------------------
-    // 新增功能：PDF 完整閱讀 (OCR/Text Extract) - 無 AI
-    // ------------------------------------------------------------
+    // --- PDF OCR 核心改進區塊 (2025 Revised) ---
+
+    // 大津演算法 (Otsu's Method) 計算最佳閾值
+    function getOtsuThreshold(imageData) {
+        const histogram = new Array(256).fill(0);
+        const data = imageData.data;
+        let totalPixels = 0;
+
+        // 1. 建立直方圖 (僅取綠色通道作為亮度參考，因已灰階化，RGB相同)
+        for (let i = 0; i < data.length; i += 4) {
+            histogram[data[i]]++;
+            totalPixels++;
+        }
+
+        let sum = 0;
+        for (let i = 0; i < 256; i++) sum += i * histogram[i];
+
+        let sumB = 0;
+        let wB = 0;
+        let wF = 0;
+        let maxVar = 0;
+        let threshold = 0;
+
+        // 2. 遍歷尋找最大類間變異數
+        for (let t = 0; t < 256; t++) {
+            wB += histogram[t];
+            if (wB === 0) continue;
+            wF = totalPixels - wB;
+            if (wF === 0) break;
+
+            sumB += t * histogram[t];
+            let mB = sumB / wB;
+            let mF = (sum - sumB) / wF;
+
+            let varBetween = wB * wF * (mB - mF) * (mB - mF);
+            if (varBetween > maxVar) {
+                maxVar = varBetween;
+                threshold = t;
+            }
+        }
+        return threshold;
+    }
+
+    // 影像預處理：灰階 -> Otsu 二值化
+    function preprocessCanvas(canvas) {
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // 1. 灰階化 (Grayscale)
+        for (let i = 0; i < data.length; i += 4) {
+            const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            data[i] = avg;     // R
+            data[i + 1] = avg; // G
+            data[i + 2] = avg; // B
+        }
+
+        // 2. 計算 Otsu 閾值
+        const threshold = getOtsuThreshold(imageData);
+        console.log(`Otsu Threshold Calculated: ${threshold}`);
+
+        // 3. 應用二值化 (Binarization)
+        for (let i = 0; i < data.length; i += 4) {
+            const val = data[i] > threshold ? 255 : 0;
+            data[i] = val;
+            data[i + 1] = val;
+            data[i + 2] = val;
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+    }
+
     async function handlePdfFullRead(event) {
         const file = event.target.files[0];
         if (!file) return;
-
-        // 清除上一個對話，準備顯示結果
         resetConversation(); 
-        
-        // UI 更新
         playAudioCue('start');
         const btn = document.getElementById('pdf-full-btn');
         const originalText = btn.innerText;
-        btn.disabled = true;
-        btn.innerText = "讀取中...";
+        btn.disabled = true; btn.innerText = "讀取中...";
         
-        // 顯示在對話區
-        addMessage('user', `請求讀取 PDF 文件內容: ${file.name}`);
+        addMessage('user', `讀取 PDF: ${file.name}`);
         const resultDiv = addMessage('assistant', '正在初始化 PDF 讀取引擎...');
         
         try {
-            // 使用 window.pdfjsLib 確保全域變數
             const pdfjs = window.pdfjsLib; 
-            if (!pdfjs) throw new Error("PDF.js 尚未載入完成，請稍候重試。");
+            if (!pdfjs) throw new Error("PDF.js 尚未載入");
 
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjs.getDocument({ 
@@ -1398,130 +1213,85 @@
                 cMapPacked: true,
             }).promise;
             
-            // 步驟一：判斷是文字版還是圖像版
-            // 讀取第一頁來判斷
             const firstPage = await pdf.getPage(1);
             const textContent = await firstPage.getTextContent();
             const rawText = textContent.items.map(item => item.str).join('').trim();
             
             let extractedText = "";
-            let mode = "TEXT"; // 預設為文字模式
+            let mode = "TEXT";
             
-            // 如果第一頁文字極少 (<50字)，假設為掃描/圖像 PDF，啟用 OCR
             if (rawText.length < 50) {
                 mode = "OCR";
-                updateStatusBar(`檢測為圖像 PDF，啟動 OCR 引擎 (高畫質模式)...`, 'busy');
+                updateStatusBar(`啟用 OCR (高精度 Best 模型)...`, 'busy');
             } else {
-                updateStatusBar(`檢測為文字 PDF，開始提取...`, 'busy');
+                updateStatusBar(`文字模式提取中...`, 'busy');
             }
             
             const totalPages = pdf.numPages;
             
             if (mode === "TEXT") {
-                // 純文字提取模式
                 for (let i = 1; i <= totalPages; i++) {
-                    updateStatusBar(`正在提取文字 (Text Mode)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+                    updateStatusBar(`提取文字... (${i}/${totalPages} 頁)`, 'busy');
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
-                    const pageText = content.items.map(item => item.str).join(' ');
-                    extractedText += `\n--- 第 ${i} 頁 ---\n${pageText}\n`;
+                    extractedText += `\n--- 第 ${i} 頁 ---\n${content.items.map(item => item.str).join(' ')}\n`;
                 }
             } else {
-                // OCR 模式 (Tesseract.js)
                 extractedText = await performOCR(pdf, totalPages);
             }
             
-            // 顯示結果
-            const finalDisplay = `### PDF 完整內容讀取報告\n**檔名**: ${file.name}\n**模式**: ${mode === 'OCR' ? '圖像辨識 (OCR)' : '文字提取'}\n**頁數**: ${totalPages}\n\n---\n\n${extractedText}`;
+            const finalDisplay = `### PDF 讀取報告\n**檔名**: ${file.name}\n**模式**: ${mode === 'OCR' ? '高精度 OCR' : '文字提取'}\n**頁數**: ${totalPages}\n\n---\n\n${extractedText}`;
+            resultDiv.querySelector('.markdown-body').innerHTML = DOMPurify.sanitize(marked.parse(finalDisplay));
             
-            // 更新結果區
-            const contentDiv = resultDiv.querySelector('.markdown-body');
-            contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(finalDisplay));
-            
-            // 更新按鈕狀態
             const miniCopyBtn = resultDiv.querySelector('.mini-copy-btn');
-            if (miniCopyBtn) {
-                miniCopyBtn.onclick = function() {
-                    navigator.clipboard.writeText(contentDiv.innerText)
-                        .then(() => showTransientStatus("已複製 PDF 內容"));
-                };
-            }
+            if (miniCopyBtn) miniCopyBtn.onclick = () => { navigator.clipboard.writeText(resultDiv.querySelector('.markdown-body').innerText).then(() => showTransientStatus("已複製內容")); };
             
             showTransientStatus("PDF 讀取完成");
             playAudioCue('success');
 
         } catch (e) {
-            console.error("PDF Full Read Error", e);
-            const contentDiv = resultDiv.querySelector('.markdown-body');
-            contentDiv.innerText = `發生錯誤: ${e.message}`;
+            console.error(e);
+            resultDiv.querySelector('.markdown-body').innerText = `錯誤: ${e.message}`;
             updateStatusBar("讀取失敗", "error");
             playAudioCue('error');
         } finally {
-            btn.disabled = false;
-            btn.innerText = originalText;
-            document.getElementById('pdf-full-input').value = ""; // 重置 input
+            btn.disabled = false; btn.innerText = originalText;
+            document.getElementById('pdf-full-input').value = ""; 
         }
     }
 
-    // 新增：Canvas 預處理函式 (二值化 & 增強)
-    function preprocessCanvas(canvas) {
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        
-        // 遍歷所有像素進行二值化 (Thresholding)
-        // 閾值設定為 180 (0-255)，高於此值變白，低於此值變黑
-        // 這能有效去除灰色背景與雜訊
-        for (let i = 0; i < data.length; i += 4) {
-            // 計算亮度 (Luma)
-            const brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
-            
-            // 二值化邏輯
-            const final = brightness > 180 ? 255 : 0;
-            
-            data[i] = final;     // R
-            data[i + 1] = final; // G
-            data[i + 2] = final; // B
-            // Alpha 通道保持不變 (通常是 255)
-        }
-        
-        ctx.putImageData(imageData, 0, 0);
-    }
-
-    // OCR 執行邏輯 (使用 Tesseract.js - 極致畫質版)
+    // OCR 執行邏輯 (使用 Tesseract Best 模型)
     async function performOCR(pdf, totalPages) {
         let fullText = "";
         
-        // 建立 Worker (繁中 + 簡中 + 英文)
-        const worker = await Tesseract.createWorker(['chi_tra', 'chi_sim', 'eng']);
+        updateStatusBar("正在載入高精度模型 (40MB+)，初次請稍候...", 'busy');
+        
+        // 設定 worker，強制指定 Best 模型路徑
+        const worker = await Tesseract.createWorker(['chi_tra', 'chi_sim', 'eng'], 1, {
+            langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
+            gzip: true
+        });
         
         for (let i = 1; i <= totalPages; i++) {
-            updateStatusBar(`正在進行高畫質影像辨識 (OCR)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
+            updateStatusBar(`OCR 處理中 (Otsu 二值化)... 進度: ${Math.round((i/totalPages)*100)}% (第 ${i}/${totalPages} 頁)`, 'busy');
             
             const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 4.0 }); // 300 DPI 等級
             
-            // 關鍵修正：將 Scale 設為 4.0 (約 288 DPI)，解決模糊亂碼
-            const viewport = page.getViewport({ scale: 4.0 }); 
-            
-            // 建立 Canvas
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d', { willReadFrequently: true });
             canvas.height = viewport.height;
             canvas.width = viewport.width;
             
-            // 關鍵修正：填充白色背景 (解決透明圖層變黑問題)
             context.fillStyle = "#FFFFFF";
             context.fillRect(0, 0, canvas.width, canvas.height);
             
-            // 渲染 PDF 到 Canvas
             await page.render({ canvasContext: context, viewport: viewport }).promise;
             
-            // 新增：執行影像預處理 (二值化)
+            // 執行強化預處理
             preprocessCanvas(canvas);
             
-            // 執行 OCR
             const { data: { text } } = await worker.recognize(canvas);
-            
             fullText += `\n--- 第 ${i} 頁 (OCR) ---\n${text}\n`;
         }
         
@@ -1529,59 +1299,41 @@
         return fullText;
     }
 
-    // 舊有的 PDF 提取 (保留給 Chat 用)
     async function extractTextFromPDF(file) {
         try {
-            const pdfjs = window.pdfjsLib; // 確保引用全域
-            if (!pdfjs) return null; // 若模組未載入，降級處理
+            const pdfjs = window.pdfjsLib; 
+            if (!pdfjs) return null; 
 
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjs.getDocument({ 
-                data: arrayBuffer,
-                cMapUrl: pdfCMapUrl,
-                cMapPacked: true,
-            }).promise;
+            const pdf = await pdfjs.getDocument({ data: arrayBuffer, cMapUrl: pdfCMapUrl, cMapPacked: true }).promise;
             
             let firstPage = await pdf.getPage(1);
             let firstContent = await firstPage.getTextContent();
             let firstText = firstContent.items.map(item => item.str).join(' ').trim();
 
-            if (!firstText || firstText.length < 20) {
-                console.log("PDF 似乎為圖像版/掃描版 (文字極少)");
-                return null; 
-            }
+            if (!firstText || firstText.length < 20) return null; 
 
             let fullText = "";
             const maxPages = Math.min(pdf.numPages, 100);
-            
             for (let i = 1; i <= maxPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
-                fullText += `[第 ${i} 頁]\n${pageText}\n`;
+                fullText += `[第 ${i} 頁]\n${textContent.items.map(item => item.str).join(' ')}\n`;
             }
-            
-            if (pdf.numPages > 100) fullText += "\n[文件過長，僅讀取前 100 頁]";
-            
             return fullText.trim();
         } catch (e) {
-            console.error("PDF extract error", e);
-            // 發生錯誤時回傳 null，讓系統降級為 Vision 模式
             return null; 
         }
     }
 
     function cleanHistoryImages(providerKey) {
         if (!chatHistory || chatHistory.length === 0) return;
-
         if (providerKey === 'gemini') {
             chatHistory.forEach(msg => {
                 if (msg.role === 'user' && msg.parts) {
                     const originalLen = msg.parts.length;
                     msg.parts = msg.parts.filter(p => !p.inline_data);
-                    if (msg.parts.length === 0 && originalLen > 0) {
-                        msg.parts.push({ text: "[使用者上傳的圖片已移除以節省流量]" });
-                    }
+                    if (msg.parts.length === 0 && originalLen > 0) msg.parts.push({ text: "[圖片已移除]" });
                 }
             });
         } else {
@@ -1589,15 +1341,20 @@
                 if (msg.role === 'user' && Array.isArray(msg.content)) {
                     const hasImage = msg.content.some(c => c.type === 'image_url');
                     msg.content = msg.content.filter(c => c.type === 'text');
-                    
-                    if (msg.content.length === 0 && hasImage) {
-                         msg.content = "[使用者上傳的圖片已移除以節省流量]";
-                    } else if (msg.content.length === 1 && msg.content[0].type === 'text') {
-                        msg.content = msg.content[0].text;
-                    }
+                    if (msg.content.length === 0 && hasImage) msg.content = "[圖片已移除]";
+                    else if (msg.content.length === 1 && msg.content[0].type === 'text') msg.content = msg.content[0].text;
                 }
             });
         }
+    }
+
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = () => reject(new Error("無法讀取檔案"));
+            reader.readAsDataURL(file);
+        });
     }
 
     async function handleSubmit(e) {
@@ -1613,21 +1370,15 @@
         }
 
         playAudioCue('start');
-        updateStatusBar("請稍後，正在處理...", 'busy');
-        
+        updateStatusBar("正在處理...", 'busy');
         const submitBtn = document.getElementById('submit-btn');
         submitBtn.disabled = true; submitBtn.innerText = "發送中";
 
         const timeoutSec = parseInt(document.getElementById('timeout-setting').value) || 120;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
-
-        const currentFile = selectedFile;
-        // 修正：對檔名進行安全處理，防止特殊字元破壞 Prompt 結構
         const safeFileName = selectedFile ? selectedFile.name.replace(/[\[\]]/g, "") : null;
-        
         let finalInputText = userInput;
-
         cleanHistoryImages(pKey);
 
         try {
@@ -1635,113 +1386,65 @@
             let finalMimeType = null;
             let skipFileSend = false;
 
-            if (currentFile) {
-                if (currentFile.type === 'application/pdf') {
-                    const pdfText = await extractTextFromPDF(currentFile);
-                    
+            if (selectedFile) {
+                if (selectedFile.type === 'application/pdf') {
+                    const pdfText = await extractTextFromPDF(selectedFile);
                     if (pdfText) {
-                        finalInputText = `[使用者上傳了 PDF 文件 (${safeFileName})，以下是內容]:\n${pdfText}\n\n[使用者提問]: ${userInput}`;
+                        finalInputText = `[PDF內容: ${safeFileName}]\n${pdfText}\n\n[提問]: ${userInput}`;
                         skipFileSend = true; 
-                        fileData = null;
                     } else {
-                        // PDF 降級處理 (轉為 Base64 圖片/文件)
-                        fileData = await readFileAsBase64(currentFile);
-                        finalMimeType = currentFile.type;
+                        fileData = await readFileAsBase64(selectedFile);
+                        finalMimeType = selectedFile.type;
                     }
-                } else if (currentFile.type.startsWith('image/')) {
-                    fileData = await readFileAsBase64(currentFile);
-                    finalMimeType = currentFile.type;
+                } else if (selectedFile.type.startsWith('image/')) {
+                    fileData = await readFileAsBase64(selectedFile);
+                    finalMimeType = selectedFile.type;
                 } else {
-                    // 其他類型 (如音訊)，嘗試直接讀取
                     if (pKey === 'gemini') {
-                        fileData = await readFileAsBase64(currentFile);
-                        finalMimeType = currentFile.type;
-                    } else {
-                        throw new Error("目前模式僅支援圖片上傳，影音檔請使用 Google Gemini。");
-                    }
+                        fileData = await readFileAsBase64(selectedFile);
+                        finalMimeType = selectedFile.type;
+                    } else throw new Error("此模式僅支援圖片。");
                 }
             }
 
             const response = await callAI(pKey, finalInputText, fileData, finalMimeType, controller.signal);
             
-            document.getElementById('user-input').value = "";
-            document.getElementById('user-input').setAttribute('aria-label', '輸入訊息區');
+            inputField.value = "";
             document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
             document.getElementById('file-input').value = "";
             selectedFile = null; 
             
-            let displayMsg = userInput;
-            if (safeFileName) {
-                displayMsg = `[📎 ${safeFileName}]\n${userInput}`;
-            }
-            addMessage('user', displayMsg);
-            
+            addMessage('user', safeFileName ? `[📎 ${safeFileName}]\n${userInput}` : userInput);
             const aiMsgDiv = addMessage('assistant', response);
             
             if (pKey === 'gemini') {
-                const historyText = skipFileSend ? finalInputText : userInput;
-                const newParts = [];
-                if (fileData && !skipFileSend) {
-                     newParts.push({ inline_data: { mime_type: finalMimeType, data: fileData } });
-                }
-                newParts.push({ text: historyText });
-                
-                chatHistory.push({ role: "user", parts: newParts });
+                const parts = [];
+                if (fileData && !skipFileSend) parts.push({ inline_data: { mime_type: finalMimeType, data: fileData } });
+                parts.push({ text: skipFileSend ? finalInputText : userInput });
+                chatHistory.push({ role: "user", parts: parts });
                 chatHistory.push({ role: "model", parts: [{ text: response }] });
             } else {
-                let msgContent = finalInputText;
+                let content = finalInputText;
                 if (fileData && !skipFileSend) {
-                    msgContent = [
-                        { type: "text", text: finalInputText },
-                        { type: "image_url", image_url: { url: `data:${finalMimeType};base64,${fileData}` } }
-                    ];
+                    content = [{ type: "text", text: finalInputText }, { type: "image_url", image_url: { url: `data:${finalMimeType};base64,${fileData}` } }];
                 }
-                chatHistory.push({ role: "user", content: msgContent });
+                chatHistory.push({ role: "user", content: content });
                 chatHistory.push({ role: "assistant", content: response });
             }
 
-            if (aiMsgDiv) {
-                aiMsgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                setTimeout(() => aiMsgDiv.focus(), 100);
-            }
-            showReadyStatus();
-            playAudioCue('success');
-            
+            if (aiMsgDiv) { aiMsgDiv.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => aiMsgDiv.focus(), 100); }
+            showReadyStatus(); playAudioCue('success');
             if (navigator.vibrate) navigator.vibrate(50);
 
         } catch (err) {
             addMessage('user', userInput);
-
-            let errMsg = "";
-            if (err.name === 'AbortError' || err.message.includes('aborted')) {
-                errMsg = `AI 模型沒有回應 (超過 ${timeoutSec} 秒)`;
-            } else {
-                errMsg = `錯誤: ${err.message}`;
-            }
-            const errorDiv = addMessage('error', errMsg);
-            
-            if (errorDiv) {
-                errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                setTimeout(() => errorDiv.focus(), 100);
-            }
-            showReadyStatus();
-            playAudioCue('error');
-            
-            if (navigator.vibrate) navigator.vibrate(500);
-
+            const errorDiv = addMessage('error', err.name === 'AbortError' ? "連線逾時" : err.message);
+            errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showReadyStatus(); playAudioCue('error');
         } finally {
             clearTimeout(timeoutId);
             submitBtn.disabled = false; submitBtn.innerText = "傳送";
         }
-    }
-
-    function readFileAsBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = () => reject(new Error("無法讀取檔案內容"));
-            reader.readAsDataURL(file);
-        });
     }
 
     async function callAI(provider, text, fileBase64, mimeType, signal) {
@@ -1749,100 +1452,41 @@
         const prompt = document.getElementById('system-prompt').value;
         let model = currentActiveModelId;
 
-        if (!apiKey) throw new Error("請先輸入 API Key");
-
-        let body = {};
-        let url = "";
-        let headers = { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}` 
-        };
+        if (!apiKey) throw new Error("請輸入 API Key");
+        let body = {}, url = "", headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
 
         if (provider === 'gemini') {
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             delete headers['Authorization']; 
-
-            const currentParts = [];
-            if (fileBase64) {
-                currentParts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
-            }
-            currentParts.push({ text: text });
-            
-            const fullContents = [...chatHistory, { role: "user", parts: currentParts }];
-
-            let tools = [{ google_search: {} }];
-            
-            body = {
-                system_instruction: { parts: [{ text: prompt }] },
-                contents: fullContents,
-                tools: tools 
-            };
-
+            const parts = [];
+            if (fileBase64) parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
+            parts.push({ text: text });
+            body = { system_instruction: { parts: [{ text: prompt }] }, contents: [...chatHistory, { role: "user", parts: parts }], tools: [{ google_search: {} }] };
         } else {
             if (provider === 'mistral') url = "https://api.mistral.ai/v1/chat/completions";
             else if (provider === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = window.location.href; 
                 headers['X-Title'] = 'AI Assistant';
-                
-                // 修正問題 B：OpenRouter 聯網搜尋參數
-                // 使用 plugins 參數而非修改模型名稱
-                const useOnline = document.getElementById('openrouter-web-search').checked;
-                if (useOnline) {
-                    body.plugins = [{ id: "web" }];
-                }
+                if (document.getElementById('openrouter-web-search').checked) body.plugins = [{ id: "web" }];
             }
             else if (provider === 'openai') url = "https://api.openai.com/v1/chat/completions";
             else if (provider === 'groq') url = "https://api.groq.com/openai/v1/chat/completions";
             else if (provider === 'perplexity') url = "https://api.perplexity.ai/chat/completions";
 
-            let messages = [{ role: "system", content: prompt }];
-            messages = messages.concat(chatHistory);
-
-            let currentContent = text;
-            if (fileBase64) {
-                currentContent = [
-                    { type: "text", text: text },
-                    { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }
-                ];
-            }
-            messages.push({ role: "user", content: currentContent });
-
-            body = {
-                ...body, // 合併先前的屬性 (如 plugins)
-                model: model,
-                messages: messages,
-                temperature: 0.7
-            };
+            let messages = [{ role: "system", content: prompt }, ...chatHistory];
+            let content = text;
+            if (fileBase64) content = [{ type: "text", text: text }, { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } }];
+            messages.push({ role: "user", content: content });
+            body = { model: model, messages: messages, temperature: 0.7 };
         }
 
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body),
-            signal: signal
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`API 錯誤 (${res.status}): ${errText}`);
-        }
-
+        const res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: signal });
+        if (!res.ok) throw new Error((await res.text()) || "API Error");
         const data = await res.json();
         
-        if (provider === 'gemini') {
-            const candidate = data.candidates?.[0];
-            if (!candidate) throw new Error("Gemini 未回傳候選結果");
-            if (candidate.finishReason !== "STOP") throw new Error(`Gemini 停止: ${candidate.finishReason}`);
-            if (candidate.content && candidate.content.parts) {
-                return candidate.content.parts.map(p => p.text).join('');
-            }
-        } else {
-            if (data.choices && data.choices.length > 0) {
-                return data.choices[0].message.content;
-            }
-        }
-        return "無法解析 AI 回應";
+        if (provider === 'gemini') return data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || "無內容";
+        else return data.choices?.[0]?.message?.content || "無內容";
     }
 </script>
 </body>
