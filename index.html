@@ -11,16 +11,19 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 【核心修正】PDF.js v4.10.38 模組化載入並掛載至全域 -->
+    <!-- 【核心修正】PDF.js v4.10.38 模組化載入 -->
+    <!-- 使用 type="module" 確保正確載入最新穩定版，並解決 is not defined 問題 -->
     <script type="module">
         import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
         
-        // 設定 Worker
+        // 設定 Worker 來源 (必須與主程式版本一致)
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
         
-        // 將 pdfjsLib 掛載到 window，讓下方的一般 script 可以呼叫
+        // 【關鍵】將 pdfjsLib 掛載到全域 window 物件，讓外部 script 可以呼叫
         window.pdfjsLib = pdfjsLib;
         
+        // 發送自定義事件通知載入完成
+        window.dispatchEvent(new Event('pdfjs-loaded'));
         console.log("PDF.js v4.10.38 module loaded and exposed to window.");
     </script>
     
@@ -201,7 +204,7 @@
 <body>
 
 <!-- 狀態列 -->
-<div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中...</div>
+<div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中 (請稍候)...</div>
 
 <div class="container">
     <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
@@ -287,11 +290,11 @@
             <input type="file" id="pdf-tool-input" class="visually-hidden" accept="application/pdf" onchange="handlePDFToolFileSelect()">
 
             <!-- 控制項 A -->
-            <button type="button" class="tool-btn" onclick="document.getElementById('pdf-tool-input').click()">
-                📄 PDF 完整閱讀 (智能偵測啟動)
+            <button type="button" id="pdf-start-btn" class="tool-btn" onclick="document.getElementById('pdf-tool-input').click()" disabled>
+                📄 PDF 完整閱讀 (載入中...)
             </button>
             <small style="display:block; margin: 5px 0 15px 0; color:#ccc;">
-                * 說明：優先使用本機提取（支援繁/簡/日/韓/英）。若失敗，將自動轉成圖片傳給 AI (Gemini/OpenRouter) 進行完整 OCR。
+                * 說明：優先使用本機提取（支援繁/簡/日/韓/英，並智能優化排版）。若失敗，將自動轉成圖片傳給 AI 進行完整 OCR。
             </small>
 
             <div class="row">
@@ -359,7 +362,14 @@
 </footer>
 
 <script>
-    // 全域錯誤捕捉
+    // 監聽 PDF 核心載入事件，確保按鈕在核心就緒後才啟用
+    window.addEventListener('pdfjs-loaded', () => {
+        const btn = document.getElementById('pdf-start-btn');
+        btn.innerText = "📄 PDF 完整閱讀 (智能偵測啟動)";
+        btn.disabled = false;
+        showReadyStatus();
+    });
+
     window.onerror = function(message, source, lineno, colno, error) {
         const statusBar = document.getElementById('status-bar');
         if (statusBar) {
@@ -420,7 +430,7 @@ Input: [Source Text/Document Images]
 Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v16_pdf_final_fix";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v18_final_cjk";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -519,8 +529,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
         } catch (e) {
             updateStatusBar("初始化錯誤: " + e.message, "error");
-        } finally {
-            setTimeout(showReadyStatus, 500);
         }
     });
 
@@ -559,12 +567,8 @@ Output: [Translated Text in Traditional Chinese (HK)]
     async function processPDFTool(file) {
         // 安全檢查：確保 PDF.js 已載入
         if (typeof window.pdfjsLib === 'undefined') {
-            // 稍等 1 秒再試一次 (可能模組剛載入)
-            await new Promise(r => setTimeout(r, 1000));
-            if (typeof window.pdfjsLib === 'undefined') {
-                 alert("PDF 元件尚未載入完成，請檢查網路連線或稍後再試。");
-                 return;
-            }
+            alert("PDF 核心正在載入中，請稍候再試。");
+            return;
         }
 
         if (!file || file.type !== 'application/pdf') { alert("請選擇 PDF 檔案"); return; }
@@ -574,7 +578,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const forceTranslate = document.getElementById('pdf-translate').checked;
 
         try {
-            // 情境 A: 使用者強制要求 AI 處理
             if (alwaysAI) {
                 updateStatusBar("正在將 PDF 轉為圖片以進行 AI 完整辨識...", "busy");
                 const images = await convertPdfToImages(file);
@@ -582,11 +585,10 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 return;
             }
 
-            // 情境 B: 嘗試本機提取 (支援多國語言 CJK)
             updateStatusBar("正在嘗試本機提取文字 (支援多國語言)...", "busy");
             const localText = await extractTextFromPDF(file, true); 
 
-            // 判斷提取結果是否有效 (過濾純空白或極短內容)
+            // 判斷是否成功提取 (過濾空白)
             const charCount = localText ? localText.replace(/\s/g, '').length : 0;
 
             if (charCount > 20) {
@@ -614,7 +616,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
     async function convertPdfToImages(file) {
         const arrayBuffer = await file.arrayBuffer();
         
-        // 修正：指向正確的 CDN 路徑 (v4.10.38)
+        // 使用 CDN 的 CMaps 與 Fonts (v4.10.38)
         const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
         const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/';
         
@@ -634,7 +636,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         for (let i = 1; i <= limit; i++) {
             updateStatusBar(`正在渲染 PDF 頁面 (${i}/${limit})...`, 'busy');
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.5 });
+            const viewport = page.getViewport({ scale: 1.5 }); // 1.5倍縮放確保文字清晰
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
@@ -642,8 +644,9 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
             
+            // 轉為 Base64 (JPEG 格式)
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            images.push(dataUrl.split(',')[1]); 
+            images.push(dataUrl.split(',')[1]); // 去除 Data URL 前綴
         }
         return images;
     }
@@ -705,11 +708,18 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
+    // 智能 CJK 合併演算法 (去除多餘空格)
+    function isCJK(str) {
+        if (!str) return false;
+        // 包含：中日韓文字、全形標點、假名、諺文
+        return /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(str);
+    }
+
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             
-            // 【核心修正】指定 CMap 與 StandardFonts
+            // 指定 CDN 資源路徑 (v4.10.38)
             const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
             const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/';
             
@@ -737,13 +747,15 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     const str = item.str;
                     if (!str) continue;
 
-                    // 【排版優化】：中日韓 (CJK) 字符間不加空格
-                    const isCurrentCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(str[0]);
-                    const isLastCJK = lastItemStr ? /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lastItemStr.slice(-1)) : false;
+                    // 【核心優化】CJK 字符間不加空格，其他情況加空格
+                    const isCurrentCJK = isCJK(str.charAt(0)); 
+                    const isLastCJK = lastItemStr ? isCJK(lastItemStr.slice(-1)) : false;
                     
                     if (lastItemStr && !item.hasEOL) {
+                        // 僅在非 CJK 字符間加入空格 (如英文單字之間)
+                        // 若前後有任一為 CJK，則視為緊密排列，不加空格
                         if (!isLastCJK && !isCurrentCJK) {
-                            pageStr += " ";
+                            pageStr += " "; 
                         }
                     }
                     
