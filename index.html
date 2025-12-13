@@ -11,8 +11,18 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 引入 PDF.js 核心 (v4.10.38 Legacy - 確保最佳相容性) -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.js"></script>
+    <!-- 【核心修正】PDF.js v4.10.38 模組化載入並掛載至全域 -->
+    <script type="module">
+        import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+        
+        // 設定 Worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+        
+        // 將 pdfjsLib 掛載到 window，讓下方的一般 script 可以呼叫
+        window.pdfjsLib = pdfjsLib;
+        
+        console.log("PDF.js v4.10.38 module loaded and exposed to window.");
+    </script>
     
     <style>
         :root {
@@ -349,6 +359,7 @@
 </footer>
 
 <script>
+    // 全域錯誤捕捉
     window.onerror = function(message, source, lineno, colno, error) {
         const statusBar = document.getElementById('status-bar');
         if (statusBar) {
@@ -409,7 +420,7 @@ Input: [Source Text/Document Images]
 Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v14_pdf_image_ocr";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v16_pdf_final_fix";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -473,27 +484,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // PDF.js 核心初始化 (v4.10.38 Legacy)
-            if (typeof pdfjsLib !== 'undefined') {
-                const legacyBaseUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy';
-                const workerUrl = `${legacyBaseUrl}/build/pdf.worker.min.js`;
-                
-                try {
-                    const response = await fetch(workerUrl);
-                    if (response.ok) {
-                        const blob = await response.blob();
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-                        console.log("PDF Worker loaded via Blob URL successfully.");
-                    } else {
-                        console.warn("Worker fetch returned status:", response.status);
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-                    }
-                } catch (e) {
-                    console.warn("Worker Blob fetch failed, falling back to CDN URL.", e);
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-                }
-            }
-
             if (!localStorage.getItem(PROMPT_VERSION_KEY)) {
                 ['gemini', 'openrouter', 'openai', 'groq', 'perplexity', 'mistral'].forEach(p => localStorage.removeItem(`${p}_prompt`));
                 localStorage.setItem(PROMPT_VERSION_KEY, 'true');
@@ -567,6 +557,16 @@ Output: [Translated Text in Traditional Chinese (HK)]
     }
 
     async function processPDFTool(file) {
+        // 安全檢查：確保 PDF.js 已載入
+        if (typeof window.pdfjsLib === 'undefined') {
+            // 稍等 1 秒再試一次 (可能模組剛載入)
+            await new Promise(r => setTimeout(r, 1000));
+            if (typeof window.pdfjsLib === 'undefined') {
+                 alert("PDF 元件尚未載入完成，請檢查網路連線或稍後再試。");
+                 return;
+            }
+        }
+
         if (!file || file.type !== 'application/pdf') { alert("請選擇 PDF 檔案"); return; }
         resetConversation(); playAudioCue('start');
         
@@ -574,6 +574,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const forceTranslate = document.getElementById('pdf-translate').checked;
 
         try {
+            // 情境 A: 使用者強制要求 AI 處理
             if (alwaysAI) {
                 updateStatusBar("正在將 PDF 轉為圖片以進行 AI 完整辨識...", "busy");
                 const images = await convertPdfToImages(file);
@@ -581,10 +582,11 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 return;
             }
 
+            // 情境 B: 嘗試本機提取 (支援多國語言 CJK)
             updateStatusBar("正在嘗試本機提取文字 (支援多國語言)...", "busy");
             const localText = await extractTextFromPDF(file, true); 
 
-            // 判斷是否成功提取 (過濾空白)
+            // 判斷提取結果是否有效 (過濾純空白或極短內容)
             const charCount = localText ? localText.replace(/\s/g, '').length : 0;
 
             if (charCount > 20) {
@@ -608,26 +610,31 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    // 新增：將 PDF 轉為圖片陣列 (Base64 JPEG)
+    // 將 PDF 轉為圖片陣列 (解決 OpenRouter 不支援 PDF 檔案的問題)
     async function convertPdfToImages(file) {
         const arrayBuffer = await file.arrayBuffer();
-        const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/cmaps/';
-        const loadingTask = pdfjsLib.getDocument({
+        
+        // 修正：指向正確的 CDN 路徑 (v4.10.38)
+        const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
+        const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/';
+        
+        const loadingTask = window.pdfjsLib.getDocument({
             data: arrayBuffer,
             cMapUrl: cMapUrl,
-            cMapPacked: true
+            cMapPacked: true,
+            standardFontDataUrl: standardFontDataUrl
         });
+        
         const pdf = await loadingTask.promise;
         const maxPages = pdf.numPages;
         const images = [];
         
-        // 限制最大頁數以防崩潰，這裡設定為 20 頁，對於長文件可考慮分批
-        const limit = Math.min(maxPages, 20); 
+        const limit = Math.min(maxPages, 15); 
 
         for (let i = 1; i <= limit; i++) {
             updateStatusBar(`正在渲染 PDF 頁面 (${i}/${limit})...`, 'busy');
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.5 }); // 1.5倍縮放確保清晰度
+            const viewport = page.getViewport({ scale: 1.5 });
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
@@ -635,31 +642,26 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
             
-            // 轉為 Base64 (JPEG)
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            images.push(dataUrl.split(',')[1]); // 只取 Base64 部分
+            images.push(dataUrl.split(',')[1]); 
         }
         return images;
     }
 
-    // 修改：支援接收圖片陣列
     async function performAIProcessing(inputData, mode, textData) {
         let targetProvider = document.getElementById('provider-select').value;
         let targetApiKey = document.getElementById('api-key').value;
         let targetModel = currentActiveModelId;
 
-        // 如果輸入是圖片陣列 (來自 PDF 轉換)
         const isImageArray = Array.isArray(inputData);
 
         if (isImageArray) {
-            // PDF OCR 強制使用 Gemini 模型
             targetProvider = 'gemini';
             const storedGeminiKey = localStorage.getItem('gemini_key');
             if (document.getElementById('provider-select').value === 'gemini') targetApiKey = document.getElementById('api-key').value;
             else if (storedGeminiKey) targetApiKey = storedGeminiKey;
             
             if (!targetApiKey) {
-                // 智慧引導 OpenRouter
                 if (document.getElementById('provider-select').value === 'openrouter') {
                     targetProvider = 'openrouter';
                     targetApiKey = document.getElementById('api-key').value;
@@ -681,7 +683,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
         else if (isImageArray) userText = "Please process these document images according to the strict system rules.";
         else userText = "Please process this request.";
 
-        // 準備傳送資料
         let filePayload = isImageArray ? inputData : null; 
         let mimeType = isImageArray ? "image/jpeg" : null;
 
@@ -690,7 +691,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
         try {
             chatHistory = []; 
-            // 呼叫 AI
             const response = await callAI(targetProvider, userText, filePayload, mimeType, controller.signal, targetModel, targetApiKey);
             addMessage('assistant', response); playAudioCue('success'); updateStatusBar("處理完成", "ready");
             document.getElementById('chat-output').lastChild.focus();
@@ -709,11 +709,11 @@ Output: [Translated Text in Traditional Chinese (HK)]
         try {
             const arrayBuffer = await file.arrayBuffer();
             
-            // 【核心修正】指定 CMap 與 StandardFontData URL
-            const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/cmaps/';
-            const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/standard_fonts/';
+            // 【核心修正】指定 CMap 與 StandardFonts
+            const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
+            const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/';
             
-            const loadingTask = pdfjsLib.getDocument({
+            const loadingTask = window.pdfjsLib.getDocument({
                 data: arrayBuffer,
                 cMapUrl: cMapUrl, 
                 cMapPacked: true,
@@ -737,7 +737,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     const str = item.str;
                     if (!str) continue;
 
-                    // 【排版優化】：CJK 字符間不加空格
+                    // 【排版優化】：中日韓 (CJK) 字符間不加空格
                     const isCurrentCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(str[0]);
                     const isLastCJK = lastItemStr ? /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lastItemStr.slice(-1)) : false;
                     
@@ -763,7 +763,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    // ----------------- 以下為通用輔助函式 (Voice, UI etc.) -----------------
+    // ----------------- 通用功能 -----------------
 
     function initVoiceSystem() {
         const engine = document.getElementById('voice-engine').value;
@@ -951,7 +951,12 @@ Output: [Translated Text in Traditional Chinese (HK)]
         let body={}, url="", headers={'Content-Type':'application/json', 'Authorization':`Bearer ${k}`};
         
         // 判斷是否為多張圖片 (PDF 轉圖)
-        const isMultiImage = Array.isArray(file) && mime === "image/jpeg";
+        const isMultiImage = Array.isArray(file);
+
+        // 修正：當 file 是陣列時，強制標記為 jpeg
+        if (isMultiImage) {
+             mime = "image/jpeg";
+        }
 
         if(p==='gemini') {
             url=`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`; delete headers['Authorization'];
