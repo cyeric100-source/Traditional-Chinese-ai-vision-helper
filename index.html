@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025 修正版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
@@ -11,20 +11,33 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 【核心修正】PDF.js v5.4.449 模組化載入 (2025 最新穩定版) -->
+    <!-- 【核心修正 1】PDF.js v5.4.449 : CDN 優先 + Blob Fallback 雙重載入機制 -->
     <script type="module">
-        // 載入主程式 v5.4.449
         import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.min.mjs';
         
-        // 設定 Worker 來源 (必須與主程式版本嚴格一致)
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs';
-        
-        // 將 pdfjsLib 掛載到全域 window 物件
         window.pdfjsLib = pdfjsLib;
         
-        // 發送自定義事件通知載入完成
-        window.dispatchEvent(new Event('pdfjs-loaded'));
-        console.log("PDF.js v5.4.449 module loaded and exposed to window.");
+        // 定義 Worker URL
+        const WORKER_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs';
+
+        // 初始化 Worker (Blob 優先策略)
+        (async function initPdfWorker() {
+            try {
+                // 嘗試下載 Worker 腳本以建立 Blob (繞過 CORS/跨域限制)
+                const response = await fetch(WORKER_URL);
+                if (!response.ok) throw new Error("Worker fetch failed");
+                const workerScript = await response.text();
+                const blob = new Blob([workerScript], { type: "application/javascript" });
+                pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                console.log("PDF Worker loaded via Blob (Safe Mode).");
+            } catch (e) {
+                // 失敗則降級使用直接連結
+                console.warn("Blob load failed, falling back to direct CDN URL.", e);
+                pdfjsLib.GlobalWorkerOptions.workerSrc = WORKER_URL;
+            }
+            // 通知主程式載入完成
+            window.dispatchEvent(new Event('pdfjs-loaded'));
+        })();
     </script>
     
     <style>
@@ -49,6 +62,15 @@
             margin: 0; padding: 0;
             font-size: 1.2rem; line-height: 1.6;
             padding-top: 60px;
+            /* 禁止選取文字以優化長按體驗 */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        /* 允許訊息區選取文字 */
+        .message-area, #system-prompt, #user-input, input {
+            -webkit-user-select: text;
+            user-select: text;
         }
 
         .container {
@@ -106,14 +128,13 @@
             background-color: #0066cc; color: white; border: 2px solid #44aaff;
         }
 
+        /* 錄音中狀態樣式 */
         button.recording {
-            background-color: #ff0000 !important; color: #ffffff !important; animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+            background-color: #ff3333 !important; 
+            color: #ffffff !important; 
+            border-color: #ffaaaa !important;
+            transform: scale(0.98);
+            box-shadow: inset 0 0 10px #000;
         }
 
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
@@ -191,6 +212,13 @@
         #status-bar.ready { background: #004400; border-bottom-color: #00ff00; }
         #status-bar.busy { background: #664400; border-bottom-color: #ffff00; }
         #status-bar.error { background: #660000; border-bottom-color: #ff0000; }
+        #status-bar.recording { background: #aa0000; border-bottom-color: #ff0000; animation: pulse-status 1s infinite; }
+        
+        @keyframes pulse-status {
+             0% { background-color: #aa0000; }
+             50% { background-color: #ff0000; }
+             100% { background-color: #aa0000; }
+        }
 
         .hidden { display: none !important; }
         .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -207,7 +235,7 @@
 <div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中 (請稍候)...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -259,7 +287,7 @@
                 <h3>語音輸入設定</h3>
                 <label for="voice-engine">語音辨識引擎:</label>
                 <select id="voice-engine" onchange="saveVoiceSettings()">
-                    <option value="browser">瀏覽器原生 (免費，品質普通)</option>
+                    <option value="browser">瀏覽器原生 (免費，對講機模式)</option>
                     <option value="openai">OpenAI Whisper (高準確，需付費)</option>
                     <option value="groq">Groq Whisper (極速，需 Key)</option>
                 </select>
@@ -352,7 +380,11 @@
         </div>
         
         <div class="row">
-            <button type="button" id="voice-btn" class="secondary" onclick="toggleVoiceInput()" aria-keyshortcuts="Alt+Shift+V" style="width: auto; padding: 0 15px; height: 80px; margin:0; font-size: 1.2rem;" title="語音輸入 (Alt+Shift+V)" aria-label="語音輸入 (Alt+Shift+V)">語音輸入</button>
+            <!-- 【核心修正 3】語音按鈕 UI 與事件綁定 (對講機模式) -->
+            <!-- 移除 onclick，改用 JavaScript 監聽 touch/mouse 事件 -->
+            <button type="button" id="voice-btn" class="secondary" aria-keyshortcuts="Alt+Shift+V" style="width: auto; padding: 0 15px; height: 80px; margin:0; font-size: 1.2rem;" title="語音輸入 (按住不放說話)" aria-label="語音輸入 (按住不放說話)">
+                按住說話
+            </button>
             
             <textarea id="user-input" placeholder="輸入訊息... (可拖放檔案或 Ctrl+V)" aria-keyshortcuts="Alt+Shift+I" autocomplete="off" rows="3" aria-label="輸入訊息區"></textarea>
             
@@ -443,7 +475,7 @@ Translate the provided source content FULLY and ACCURATELY into fluent, natural 
 Output purely the translated text. Do not add introductions like "Here is the translation".
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v22_final_sleep3000";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v23_final_blob";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -462,55 +494,37 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     let chatHistory = [];
     let audioContext = null;
     let allCurrentModels = [];
+    
+    // 語音輸入狀態標記
+    let isVoiceRecording = false;
 
     // 輔助函式：Sleep
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // 【新增】智能合併 AI OCR 結果的函式 (移植自文字版 PDF 邏輯)
     function smartMergeLines(rawText) {
         if (!rawText) return "";
-        
         const lines = rawText.split(/\r?\n/);
         let processedText = "";
-        
         const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
 
         for (let i = 0; i < lines.length; i++) {
             let currLine = lines[i].trim();
-            
-            if (currLine.length === 0) {
-                processedText += "\n\n"; 
-                continue;
-            }
-
+            if (currLine.length === 0) { processedText += "\n\n"; continue; }
             if (i < lines.length - 1) {
                 let nextLine = lines[i + 1].trim();
-                
-                if (nextLine.length === 0) {
-                    processedText += currLine + "\n";
-                    continue;
-                }
-
+                if (nextLine.length === 0) { processedText += currLine + "\n"; continue; }
                 const lastChar = currLine.slice(-1);
                 const nextChar = nextLine.charAt(0);
-                
                 const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
                 const isHeaderOrList = /^#/.test(currLine) || /^[-*] /.test(currLine) || /^#/.test(nextLine) || /^[-*] /.test(nextLine);
 
-                if (isSentenceEnd || isHeaderOrList) {
-                    processedText += currLine + "\n";
-                } else {
-                    if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) {
-                        processedText += currLine.slice(0, -1);
-                    } else if (isCJK(lastChar) && isCJK(nextChar)) {
-                        processedText += currLine;
-                    } else {
-                        processedText += currLine + " ";
-                    }
+                if (isSentenceEnd || isHeaderOrList) { processedText += currLine + "\n"; } 
+                else {
+                    if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) { processedText += currLine.slice(0, -1); } 
+                    else if (isCJK(lastChar) && isCJK(nextChar)) { processedText += currLine; } 
+                    else { processedText += currLine + " "; }
                 }
-            } else {
-                processedText += currLine + "\n";
-            }
+            } else { processedText += currLine + "\n"; }
         }
         return processedText.replace(/\n{3,}/g, "\n\n").trim();
     }
@@ -528,9 +542,39 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     document.addEventListener('touchstart', unlockAudioContext);
     document.addEventListener('keydown', handleGlobalShortcuts);
 
+    // 【核心修正 3】 語音按鈕事件綁定
+    function initVoiceButtonEvents() {
+        const btn = document.getElementById('voice-btn');
+        if (!btn) return;
+        
+        // 觸控事件 (Mobile)
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startVoiceRecording(); }, {passive: false});
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceRecording(); });
+        
+        // 滑鼠事件 (Desktop)
+        btn.addEventListener('mousedown', (e) => { startVoiceRecording(); });
+        btn.addEventListener('mouseup', (e) => { stopVoiceRecording(); });
+        btn.addEventListener('mouseleave', (e) => { 
+            if(isVoiceRecording) stopVoiceRecording(); 
+        });
+        
+        // 防止右鍵選單干擾長按
+        btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    // 鍵盤操作仍維持 Toggle 模式，方便無法使用滑鼠的視障者
     function handleGlobalShortcuts(e) {
         if (!e.altKey || !e.shiftKey) return;
         const key = e.key.toLowerCase();
+        
+        // 特殊處理語音鍵 (Alt+Shift+V) -> 鍵盤模式下為切換開關
+        if (key === 'v') {
+            e.preventDefault();
+            if (isVoiceRecording) stopVoiceRecording();
+            else startVoiceRecording();
+            return;
+        }
+
         const actions = {
             's': { id: 'settings-summary', type: 'click' },
             'c': { id: 'copy-btn', type: 'click' },
@@ -539,7 +583,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             'u': { id: 'upload-btn', type: 'click' },
             'n': { id: 'new-chat-btn', type: 'click' },
             'p': { id: 'pause-send', type: 'click' },
-            'v': { id: 'voice-btn', type: 'click' },
             'k': { id: 'submit-btn', type: 'click' },
             'i': { id: 'user-input', type: 'focus' },
             'r': { selector: '.latest-copy-btn', type: 'click' }
@@ -591,6 +634,9 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             initPasteImage();
             initDragAndDrop();
             initEnterKey();
+            
+            // 初始化對講機按鈕事件
+            initVoiceButtonEvents();
 
         } catch (e) {
             updateStatusBar("初始化錯誤: " + e.message, "error");
@@ -604,9 +650,41 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
         const now = audioContext.currentTime;
-        if (type === 'start') { oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(660, now); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.1); } 
-        else if (type === 'success') { oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(440, now); oscillator.frequency.exponentialRampToValueAtTime(880, now + 0.15); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.2); } 
-        else if (type === 'error') { oscillator.type = 'sawtooth'; oscillator.frequency.setValueAtTime(150, now); gainNode.gain.setValueAtTime(0.15, now); oscillator.start(now); oscillator.stop(now + 0.4); }
+        
+        if (type === 'start') { 
+            // 錄音開始：清脆的高音
+            oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(880, now); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.1); 
+            if (navigator.vibrate) navigator.vibrate(50); // 震動回饋
+        } 
+        else if (type === 'success') { 
+            // 成功/結束錄音：升調
+            oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(440, now); oscillator.frequency.exponentialRampToValueAtTime(880, now + 0.15); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.2); 
+        } 
+        else if (type === 'error') { 
+            // 錯誤：低沉鋸齒波
+            oscillator.type = 'sawtooth'; oscillator.frequency.setValueAtTime(150, now); gainNode.gain.setValueAtTime(0.15, now); oscillator.start(now); oscillator.stop(now + 0.4); 
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]); 
+        }
+        else if (type === 'abort') {
+            // 錄音異常中斷 (iOS 自動停止)：急促的降調雙響
+            oscillator.type = 'triangle'; 
+            oscillator.frequency.setValueAtTime(400, now); 
+            oscillator.frequency.linearRampToValueAtTime(200, now + 0.1);
+            gainNode.gain.setValueAtTime(0.1, now); 
+            oscillator.start(now); oscillator.stop(now + 0.1);
+            
+            // 第二響
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+            osc2.connect(gain2); gain2.connect(audioContext.destination);
+            osc2.type = 'triangle';
+            osc2.frequency.setValueAtTime(400, now + 0.15);
+            osc2.frequency.linearRampToValueAtTime(200, now + 0.25);
+            gain2.gain.setValueAtTime(0.1, now + 0.15);
+            osc2.start(now + 0.15); osc2.stop(now + 0.25);
+            
+            if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+        }
     }
 
     function resetConversation() {
@@ -675,17 +753,15 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         }
     }
 
+    // 【核心修正 2】 圖片縮放邏輯 (最大邊長 2048px)
     async function convertPdfToImages(file) {
         const arrayBuffer = await file.arrayBuffer();
         
-        const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/';
-        const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/standard_fonts/';
-        
+        // 使用 window.pdfjsLib (已由上方 fallback 機制保證存在)
         const loadingTask = window.pdfjsLib.getDocument({
             data: arrayBuffer,
-            cMapUrl: cMapUrl,
+            cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/',
             cMapPacked: true,
-            standardFontDataUrl: standardFontDataUrl
         });
 
         loadingTask.onPassword = function (updatePassword, reason) {
@@ -705,13 +781,25 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         const pdf = await loadingTask.promise;
         const maxPages = pdf.numPages;
         const images = [];
-        
         const limit = Math.min(maxPages, 20); 
 
         for (let i = 1; i <= limit; i++) {
             updateStatusBar(`正在渲染 PDF 頁面 (${i}/${limit})...`, 'busy');
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.5 });
+            
+            // 取得原始尺寸
+            const viewportRaw = page.getViewport({ scale: 1.0 });
+            
+            // 計算最佳縮放比例 (限制最大邊長 2048px 以防手機崩潰)
+            const MAX_DIMENSION = 2048;
+            const maxSide = Math.max(viewportRaw.width, viewportRaw.height);
+            let finalScale = 1.5; // 預設 1.5 倍以求清晰
+            
+            if (maxSide * finalScale > MAX_DIMENSION) {
+                finalScale = MAX_DIMENSION / maxSide;
+            }
+            
+            const viewport = page.getViewport({ scale: finalScale });
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
@@ -760,15 +848,9 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
         try {
             chatHistory = []; 
-            
-            // 序列化處理迴圈 (Sequential Loop) + 錯誤重試
             if (isImageArray) {
                 updateStatusBar(`正在處理 ${inputData.length} 頁文件 (序列化處理以確保完整性)...`, "busy");
-                
-                const singlePageUserPrompt = mode === "ocr_strict" 
-                    ? "Transcribe this page exactly." 
-                    : "Translate this page exactly into Traditional Chinese.";
-
+                const singlePageUserPrompt = mode === "ocr_strict" ? "Transcribe this page exactly." : "Translate this page exactly into Traditional Chinese.";
                 let fullResponse = "";
 
                 for (let i = 0; i < inputData.length; i++) {
@@ -781,24 +863,15 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                     while (!success && retryCount < maxRetries) {
                         try {
                             updateStatusBar(`正在處理第 ${pageNum}/${inputData.length} 頁${retryCount>0?` (重試 ${retryCount})`:''} ...`, "busy");
-
-                            // 呼叫 AI
                             let res = await callAI(targetProvider, singlePageUserPrompt, imgBase64, "image/jpeg", controller.signal, targetModel, targetApiKey);
-                            
-                            // 應用智能後處理邏輯
                             res = smartMergeLines(res);
-
-                            // 注入標題
                             const pageContent = `## [第 ${pageNum} 頁]\n${res}\n\n`;
                             fullResponse += pageContent;
                             success = true;
-
                             if (i < inputData.length - 1) {
                                 updateStatusBar(`第 ${pageNum} 頁完成，冷卻中 (避免觸發限制)...`, "busy");
-                                // 【核心修正】延長至 3 秒
                                 await sleep(3000); 
                             }
-
                         } catch (err) {
                             if (err.message.includes("429") || err.message.includes("quota") || err.message.includes("RESOURCE_EXHAUSTED")) {
                                 const waitTime = 30; 
@@ -812,14 +885,9 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                             }
                         }
                     }
-                    
-                    if (!success) {
-                        fullResponse += `## [第 ${pageNum} 頁]\n(重試多次後仍失敗)\n\n`;
-                    }
+                    if (!success) { fullResponse += `## [第 ${pageNum} 頁]\n(重試多次後仍失敗)\n\n`; }
                 }
-
                 addMessage('assistant', fullResponse);
-
             } else {
                 let userText = mode === "translate_text" ? `[SOURCE TEXT TO TRANSLATE]:\n${textData}` : "Please process this request.";
                 const response = await callAI(targetProvider, userText, null, null, controller.signal, targetModel, targetApiKey);
@@ -842,15 +910,10 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
-            
-            const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/';
-            const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/standard_fonts/';
-            
             const loadingTask = window.pdfjsLib.getDocument({
                 data: arrayBuffer,
-                cMapUrl: cMapUrl, 
+                cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/',
                 cMapPacked: true,
-                standardFontDataUrl: standardFontDataUrl
             });
 
             loadingTask.onPassword = function (updatePassword, reason) {
@@ -870,24 +933,19 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             const pdf = await loadingTask.promise;
             let fullText = "";
             const maxPages = pdf.numPages;
-            
             const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
 
             for (let i = 1; i <= maxPages; i++) {
                 if (reportProgress) updateStatusBar(`正在提取文字 (第 ${i} / ${maxPages} 頁)...`, "busy");
-                
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                
                 let lines = [];
                 let currentLine = [];
                 
                 for (const item of textContent.items) {
                     if (!item.str) continue;
-                    
                     const y = item.transform[5]; 
                     const height = item.transform[3] || item.height || 10; 
-                    
                     if (currentLine.length > 0) {
                         const lastItemY = currentLine[0].transform[5];
                         if (Math.abs(y - lastItemY) > (height * 0.5)) {
@@ -900,10 +958,8 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 if (currentLine.length > 0) lines.push(currentLine);
 
                 let processedLines = [];
-                
                 for (const line of lines) {
                     line.sort((a, b) => a.transform[4] - b.transform[4]);
-
                     let lineText = "";
                     let lastItemXEnd = null;
                     let lastChar = "";
@@ -913,17 +969,13 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                         const x = item.transform[4];
                         const w = item.width;
                         const fontSize = item.transform[0] || 10;
-
                         if (lastItemXEnd !== null) {
                             const gap = x - lastItemXEnd;
                             if (gap > (fontSize * 0.4)) { 
                                 const currChar = str.charAt(0);
-                                if (!(isCJK(lastChar) && isCJK(currChar))) {
-                                    lineText += " ";
-                                }
+                                if (!(isCJK(lastChar) && isCJK(currChar))) { lineText += " "; }
                             }
                         }
-                        
                         lineText += str;
                         lastItemXEnd = x + w;
                         lastChar = str.slice(-1);
@@ -932,87 +984,148 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 }
 
                 let pageParagraphs = "";
-                
                 for (let j = 0; j < processedLines.length; j++) {
                     const currLine = processedLines[j];
-                    
                     if (j < processedLines.length - 1) {
                         const nextLine = processedLines[j + 1];
                         const lastChar = currLine.slice(-1);
                         const nextChar = nextLine.charAt(0);
-                        
                         const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
 
-                        if (isSentenceEnd) {
-                            pageParagraphs += currLine + "\n";
-                        } else {
-                            if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) {
-                                pageParagraphs += currLine.slice(0, -1); 
-                            } 
-                            else if (isCJK(lastChar) && isCJK(nextChar)) {
-                                pageParagraphs += currLine;
-                            } 
-                            else {
-                                pageParagraphs += currLine + " ";
-                            }
+                        if (isSentenceEnd) { pageParagraphs += currLine + "\n"; } 
+                        else {
+                            if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) { pageParagraphs += currLine.slice(0, -1); } 
+                            else if (isCJK(lastChar) && isCJK(nextChar)) { pageParagraphs += currLine; } 
+                            else { pageParagraphs += currLine + " "; }
                         }
-                    } else {
-                        pageParagraphs += currLine + "\n";
-                    }
+                    } else { pageParagraphs += currLine + "\n"; }
                 }
-
-                if (pageParagraphs.trim().length > 0) {
-                    fullText += `## [第 ${i} 頁]\n${pageParagraphs}\n\n`;
-                }
+                if (pageParagraphs.trim().length > 0) { fullText += `## [第 ${i} 頁]\n${pageParagraphs}\n\n`; }
             }
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
-            if (e.name === 'PasswordException') {
-                return null;
-            }
+            if (e.name === 'PasswordException') return null;
             throw e;
         }
     }
 
-    // ----------------- 通用功能 -----------------
+    // ----------------- 語音功能 (核心修正 3) -----------------
 
     function initVoiceSystem() {
         const engine = document.getElementById('voice-engine').value;
-        if (engine === 'browser') initBrowserSpeech(); else if (recognition) { recognition.stop(); recognition = null; }
+        if (engine === 'browser') initBrowserSpeech(); 
+        else if (recognition) { recognition.stop(); recognition = null; }
     }
+
     function initBrowserSpeech() {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition(); recognition.lang = 'zh-HK'; recognition.continuous = false; recognition.interimResults = true; 
-            recognition.onstart = () => { document.getElementById('voice-btn').classList.add('recording'); showTransientStatus('正在聆聽...', 'info'); playAudioCue('start'); };
+            recognition = new SpeechRecognition(); 
+            recognition.lang = 'zh-HK'; 
+            recognition.continuous = true; // 允許連續直到手放開
+            recognition.interimResults = true; 
+            
+            // 事件：開始
+            recognition.onstart = () => { 
+                isVoiceRecording = true;
+                const btn = document.getElementById('voice-btn');
+                btn.classList.add('recording'); 
+                btn.innerText = "放開傳送...";
+                updateStatusBar('正在聆聽...', 'recording'); 
+                playAudioCue('start'); 
+            };
+            
+            // 事件：結果
             recognition.onresult = (e) => {
-                let t = ''; for (let i = e.resultIndex; i < e.results.length; ++i) if (e.results[i].isFinal) t += e.results[i][0].transcript;
+                let t = ''; 
+                for (let i = e.resultIndex; i < e.results.length; ++i) {
+                    if (e.results[i].isFinal) t += e.results[i][0].transcript;
+                }
                 if (t) document.getElementById('user-input').value += (document.getElementById('user-input').value ? " " : "") + t;
             };
-            recognition.onerror = (e) => { showTransientStatus('語音: ' + e.error, 'error'); playAudioCue('error'); stopVoiceInput(); };
-            recognition.onend = stopVoiceInput;
+            
+            // 事件：錯誤
+            recognition.onerror = (e) => { 
+                // 若是 aborted 或 no-speech，可能是使用者放開太快或靜音，不一定報錯
+                if (e.error !== 'aborted' && e.error !== 'no-speech') {
+                    showTransientStatus('語音錯誤: ' + e.error, 'error'); 
+                    playAudioCue('error');
+                }
+                stopVoiceInputUI();
+            };
+            
+            // 事件：結束 (重要：偵測是否為非預期中斷)
+            recognition.onend = () => { 
+                if (isVoiceRecording) {
+                    // 若旗標仍為 true 卻觸發 onend，代表是被系統強制中斷 (iOS Safari 常見)
+                    playAudioCue('abort'); 
+                    showTransientStatus('錄音已中斷 (系統限制)', 'error');
+                }
+                stopVoiceInputUI();
+            };
         }
     }
-    async function toggleVoiceInput() {
+
+    // 按下開始 (Push)
+    async function startVoiceRecording() {
+        if (isVoiceRecording) return;
         const engine = document.getElementById('voice-engine').value;
-        const btn = document.getElementById('voice-btn');
-        if (btn.classList.contains('recording')) {
-            if (engine === 'browser' && recognition) recognition.stop();
-            else if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); btn.classList.remove('recording', 'processing'); showTransientStatus('正在處理...', 'busy'); }
-            return;
-        }
-        if (engine === 'browser') recognition ? recognition.start() : null;
-        else {
+        
+        if (engine === 'browser') {
+            if (recognition) {
+                try { recognition.start(); } catch(e) { console.error(e); }
+            }
+        } else {
+            // Whisper 錄音
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
-                audioChunks = []; mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-                mediaRecorder.onstop = async () => { await processWhisperAudio(new Blob(audioChunks, {type: mediaRecorder.mimeType}), engine, mediaRecorder.mimeType); stream.getTracks().forEach(t=>t.stop()); };
-                mediaRecorder.start(); btn.classList.add('recording'); showTransientStatus('錄音中...', 'info'); playAudioCue('start');
-            } catch (e) { showTransientStatus('麥克風錯誤', 'error'); playAudioCue('error'); }
+                audioChunks = []; 
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = async () => { 
+                    await processWhisperAudio(new Blob(audioChunks, {type: mediaRecorder.mimeType}), engine, mediaRecorder.mimeType); 
+                    stream.getTracks().forEach(t=>t.stop()); 
+                };
+                mediaRecorder.start(); 
+                isVoiceRecording = true;
+                document.getElementById('voice-btn').classList.add('recording');
+                document.getElementById('voice-btn').innerText = "放開傳送...";
+                playAudioCue('start');
+            } catch (e) { 
+                showTransientStatus('麥克風錯誤', 'error'); playAudioCue('error'); 
+            }
         }
     }
+
+    // 放開停止 (Release)
+    function stopVoiceRecording() {
+        if (!isVoiceRecording) return;
+        const engine = document.getElementById('voice-engine').value;
+        
+        // 正常停止，播放成功音效
+        playAudioCue('success');
+        isVoiceRecording = false; // 正常手動停止，清除旗標
+
+        if (engine === 'browser' && recognition) {
+            recognition.stop();
+        } else if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            showTransientStatus('正在處理錄音...', 'busy');
+        }
+    }
+
+    // UI 復原
+    function stopVoiceInputUI() {
+        isVoiceRecording = false;
+        const btn = document.getElementById('voice-btn');
+        btn.classList.remove('recording');
+        btn.innerText = "按住說話";
+        if (!document.getElementById('status-bar').classList.contains('busy')) {
+             showReadyStatus();
+        }
+    }
+
     async function processWhisperAudio(blob, engine, mime) {
         let apiKey = document.getElementById('voice-api-key').value || document.getElementById('api-key').value;
         if (!apiKey) return alert("需 API Key");
@@ -1023,9 +1136,9 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             const data = await res.json();
             if (data.text) { document.getElementById('user-input').value += (document.getElementById('user-input').value ? " " : "") + data.text; showTransientStatus("完成"); }
         } catch(e) { showTransientStatus("錯誤", 'error'); playAudioCue('error'); }
-        finally { document.getElementById('voice-btn').classList.remove('recording'); showReadyStatus(); }
+        finally { stopVoiceInputUI(); }
     }
-    function stopVoiceInput() { document.getElementById('voice-btn').classList.remove('recording'); showReadyStatus(); }
+
     function saveVoiceSettings() { localStorage.setItem('voice_engine', document.getElementById('voice-engine').value); localStorage.setItem('voice_api_key', document.getElementById('voice-api-key').value); initVoiceSystem(); }
     function initPasteImage() { document.addEventListener('paste', e => { const f = e.clipboardData.files[0]; if(f && f.type.startsWith('image/')) handleFileSelect(f); }); }
     function initDragAndDrop() { const d = document.getElementById('user-input'); d.ondragover = e => {e.preventDefault(); d.classList.add('dragover')}; d.ondragleave = () => d.classList.remove('dragover'); d.ondrop = e => {e.preventDefault(); d.classList.remove('dragover'); handleFileSelect(e.dataTransfer.files[0]);}; }
@@ -1130,21 +1243,17 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             let input = txt; let fileData = null; let mime = null; let skipFile = false;
             if(selectedFile) {
                 if(selectedFile.type==='application/pdf') {
-                    // 若是 PDF，嘗試提取文字
                     const pdfText = await extractTextFromPDF(selectedFile);
                     const charCount = pdfText ? pdfText.replace(/\s/g, '').length : 0;
                     if(charCount > 20) { input=`[PDF]:\n${pdfText}\n\n${txt}`; skipFile=true; }
                     else { 
-                        // 若文字過少 (圖片PDF)，轉成圖片陣列
                         fileData = await convertPdfToImages(selectedFile); 
-                        // 標記為圖片陣列
                         mime = "application/pdf-images"; 
                     }
                 } else { 
                     fileData=await readFileAsBase64(selectedFile); mime=selectedFile.type; 
                 }
             }
-            // 若 fileData 是陣列 (PDF 圖片)，直接傳入 performAIProcessing 的邏輯
             if (mime === "application/pdf-images") {
                 await performAIProcessing(fileData, "ocr_strict", null);
             } else {
@@ -1156,25 +1265,18 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         } catch(e) { addMessage('error', e.message); playAudioCue('error'); showReadyStatus(); } finally { clearTimeout(tm); btn.disabled=false; }
     }
 
-    // 修改：支援多張圖片 (Vision Mode)
     async function callAI(p, txt, file, mime, sig, ovModel, ovKey) {
         const k = ovKey || document.getElementById('api-key').value; const sys = document.getElementById('system-prompt').value; const m = ovModel || currentActiveModelId;
         if(!k) throw new Error("需 API Key");
         let body={}, url="", headers={'Content-Type':'application/json', 'Authorization':`Bearer ${k}`};
         
-        // 判斷是否為多張圖片 (PDF 轉圖)
         const isMultiImage = Array.isArray(file);
-
-        // 修正：當 file 是陣列時，強制標記為 jpeg
-        if (isMultiImage) {
-             mime = "image/jpeg";
-        }
+        if (isMultiImage) { mime = "image/jpeg"; }
 
         if(p==='gemini') {
             url=`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`; delete headers['Authorization'];
             let parts = [];
             if (isMultiImage) {
-                // Gemini 原生支援多圖
                 file.forEach(b64 => parts.push({inline_data:{mime_type:"image/jpeg", data:b64}}));
                 parts.push({text:txt});
             } else {
@@ -1182,7 +1284,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             }
             body = { system_instruction:{parts:[{text:sys}]}, contents:[{role:"user", parts:parts}] };
         } else {
-            // OpenRouter / OpenAI / Groq
             if (p === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = location.href;
@@ -1199,13 +1300,11 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
             let content = [];
             if (isMultiImage) {
-                // OpenAI Vision 格式: 多個 image_url
                 content.push({type:"text", text:txt});
                 file.forEach(b64 => content.push({type:"image_url", image_url:{url:`data:image/jpeg;base64,${b64}`}}));
             } else {
                 content = file ? [{type:"text",text:txt}, {type:"image_url",image_url:{url:`data:${mime};base64,${file}`}}] : txt;
             }
-            
             body = { ...body, model:m, messages:[{role:"system",content:sys}, {role:"user",content:content}], temperature:0.3 };
         }
         
