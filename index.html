@@ -11,8 +11,8 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 引入 PDF.js 核心 (最新穩定版 4.10.38) -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.js"></script>
+    <!-- 引入 PDF.js 核心 (使用 Legacy 版本以確保最佳相容性與 Worker 支援) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.js"></script>
     
     <style>
         :root {
@@ -209,8 +209,8 @@
 </head>
 <body>
 
-<!-- 頂部狀態列 -->
-<div id="status-bar" role="status" aria-live="assertive" aria-atomic="true">系統初始化中...</div>
+<!-- 頂部狀態列 (修正: aria-live 預設為 polite, 加入 tabindex 以便聚焦) -->
+<div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中...</div>
 
 <div class="container">
     <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025)</h1>
@@ -373,6 +373,7 @@
         if (statusBar) {
             statusBar.innerText = `發生錯誤: ${message}`;
             statusBar.className = 'error';
+            statusBar.setAttribute('aria-live', 'assertive'); // 錯誤時強調提示
         }
         console.error("Global Error:", message, error);
     };
@@ -427,7 +428,7 @@ Input: [Source Text/Document]
 Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v10_pdf_stable";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v11_pdf_legacy";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -492,23 +493,27 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // PDF.js Configuration (Version 4.10.38)
+            // PDF.js Configuration (Version 4.10.38 - Legacy Build)
+            // 修正: 使用 legacy build 路徑以提升相容性
             if (typeof pdfjsLib !== 'undefined') {
                 const pdfVersion = '4.10.38'; 
-                const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
+                // 使用 legacy 版本以支援較舊環境並模擬單一檔案行為
+                const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}/legacy`;
                 const workerUrl = `${baseUrl}/build/pdf.worker.min.js`;
-                pdfCMapUrl = `${baseUrl}/cmaps/`; // 保留 CMap 設定以支援中文
+                pdfCMapUrl = `${baseUrl}/cmaps/`; 
 
                 try {
+                    // 修正: 強制使用 Blob 載入 Worker 以規避跨網域 (CORS) 問題
                     const response = await fetch(workerUrl);
                     if (response.ok) {
                         const blob = await response.blob();
                         pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
                     } else {
+                         // 備援: 若無法 fetch (極少見)，才使用網址 (可能會遇上 CORS 阻擋)
                          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
                     }
                 } catch (e) {
-                    console.warn("Worker Blob fetch failed", e);
+                    console.warn("Worker Blob fetch failed, falling back to URL", e);
                     pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
                 }
             }
@@ -578,7 +583,11 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
     function handlePDFToolFileSelect() {
         const input = document.getElementById('pdf-tool-input');
-        if (input.files.length > 0) processPDFTool(input.files[0]);
+        if (input.files.length > 0) {
+            processPDFTool(input.files[0]);
+            // 修正: 選擇檔案後，將焦點移回狀態列，避免迷失
+            document.getElementById('status-bar').focus();
+        }
         input.value = ""; 
     }
 
@@ -597,10 +606,8 @@ Output: [Translated Text in Traditional Chinese (HK)]
             }
 
             updateStatusBar("正在嘗試本機提取文字...", "busy");
-            // [修正點] 使用移除 standardFontDataUrl 的提取函式
             const localText = await extractTextFromPDF(file, true); 
 
-            // [修正點] 計算非空白字元，判定是否為文字版 (門檻降低至 20)
             const charCount = localText ? localText.replace(/\s/g, '').length : 0;
 
             if (charCount > 20) {
@@ -658,18 +665,16 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    /* 修正後的文字提取函式：移除 standardFontDataUrl，保留 cMapUrl */
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
-            const pdfVersion = '4.10.38'; 
-            const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}`;
+            // 使用 legacy build 的 CMap 
+            const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy`;
             
             const loadingTask = pdfjsLib.getDocument({
                 data: arrayBuffer,
                 cMapUrl: `${baseUrl}/cmaps/`, 
                 cMapPacked: true
-                // 注意：已移除 standardFontDataUrl 以避免網路問題導致崩潰
             });
 
             const pdf = await loadingTask.promise;
@@ -710,7 +715,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
-            // 回傳 null 以觸發 AI OCR 備援
             return null; 
         }
     }
@@ -768,7 +772,16 @@ Output: [Translated Text in Traditional Chinese (HK)]
     function initPasteImage() { document.addEventListener('paste', e => { const f = e.clipboardData.files[0]; if(f && f.type.startsWith('image/')) handleFileSelect(f); }); }
     function initDragAndDrop() { const d = document.getElementById('user-input'); d.ondragover = e => {e.preventDefault(); d.classList.add('dragover')}; d.ondragleave = () => d.classList.remove('dragover'); d.ondrop = e => {e.preventDefault(); d.classList.remove('dragover'); handleFileSelect(e.dataTransfer.files[0]);}; }
     function initEnterKey() { document.getElementById('user-input').onkeydown = e => { if(e.key==='Enter' && !e.shiftKey && document.getElementById('enter-to-send').checked) { e.preventDefault(); document.getElementById('submit-btn').click(); } }; }
-    function updateStatusBar(t, s='ready') { const b = document.getElementById('status-bar'); b.innerText = t; b.className = s; }
+    
+    // 修正: aria-live 切換邏輯
+    function updateStatusBar(t, s='ready') { 
+        const b = document.getElementById('status-bar'); 
+        b.innerText = t; 
+        b.className = s; 
+        // 僅在錯誤時使用 assertive，其餘時間使用 polite (避免打斷語音)
+        b.setAttribute('aria-live', s === 'error' ? 'assertive' : 'polite');
+    }
+    
     function showReadyStatus() { updateStatusBar("準備就緒"); }
     function showTransientStatus(m, t='success') { updateStatusBar(m, t==='error'?'error':'ready'); setTimeout(()=>{ if(!document.getElementById('status-bar').classList.contains('busy')) showReadyStatus(); }, 3000); }
     function addMessage(role, content) {
@@ -878,13 +891,28 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const k = ovKey || document.getElementById('api-key').value; const sys = document.getElementById('system-prompt').value; const m = ovModel || currentActiveModelId;
         if(!k) throw new Error("需 API Key");
         let body={}, url="", headers={'Content-Type':'application/json', 'Authorization':`Bearer ${k}`};
+        
         if(p==='gemini') {
             url=`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`; delete headers['Authorization'];
             let parts = file ? [{inline_data:{mime_type:mime, data:file}}, {text:txt}] : [{text:txt}];
             body = { system_instruction:{parts:[{text:sys}]}, contents:[{role:"user", parts:parts}] };
         } else {
-            url = p==='openrouter'?"https://openrouter.ai/api/v1/chat/completions":(p==='openai'?"https://api.openai.com/v1/chat/completions":"https://api.groq.com/openai/v1/chat/completions");
-            if(p==='openrouter') { headers['HTTP-Referer']=location.href; if(document.getElementById('openrouter-web-search').checked) body.plugins=[{id:"web"}]; }
+            // 修正: 針對 Mistral 與 Perplexity 的正確 API 判斷
+            if (p === 'openrouter') {
+                url = "https://openrouter.ai/api/v1/chat/completions";
+                headers['HTTP-Referer'] = location.href;
+                if(document.getElementById('openrouter-web-search').checked) body.plugins = [{id:"web"}];
+            } else if (p === 'mistral') {
+                url = "https://api.mistral.ai/v1/chat/completions";
+            } else if (p === 'perplexity') {
+                url = "https://api.perplexity.ai/chat/completions";
+            } else if (p === 'openai') {
+                url = "https://api.openai.com/v1/chat/completions";
+            } else {
+                // 預設為 Groq
+                url = "https://api.groq.com/openai/v1/chat/completions";
+            }
+
             let c = file ? [{type:"text",text:txt}, {type:"image_url",image_url:{url:`data:${mime};base64,${file}`}}] : txt;
             body = { ...body, model:m, messages:[{role:"system",content:sys}, {role:"user",content:c}], temperature:0.3 };
         }
