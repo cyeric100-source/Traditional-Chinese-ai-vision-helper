@@ -724,7 +724,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    // 【修改】v5 核心文字提取 - 引入行緩衝區與智能排序邏輯
+    // 【修改】v5 核心文字提取 - 引入段落緩衝、多語言智能合併 (A.1, A.2, A.3)
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -758,7 +758,8 @@ Output: [Translated Text in Traditional Chinese (HK)]
             let fullText = "";
             const maxPages = pdf.numPages;
             
-            // 定義 CJK 字符範圍 (含擴充)
+            // 定義嚴格 CJK 字符範圍 (中日韓文字 + 全形標點)
+            // 排除俄文、希臘文、西文符號，這些都視為需要空格的 Word-Based 語言
             const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
 
             for (let i = 1; i <= maxPages; i++) {
@@ -767,18 +768,16 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 
-                // --- 步驟 1: 基於 Y 軸座標將文字項目分組 (Line Buffer) ---
+                // --- 步驟 1: Line Buffer (基於 Y 軸分行) ---
                 let lines = [];
                 let currentLine = [];
                 
                 for (const item of textContent.items) {
                     if (!item.str) continue;
                     
-                    const y = item.transform[5]; // Y 軸座標
-                    const height = item.transform[3] || item.height || 10; // 字體高度
+                    const y = item.transform[5]; 
+                    const height = item.transform[3] || item.height || 10; 
                     
-                    // 判斷換行：如果當前物件的 Y 座標與同一行有顯著差異，則視為新的一行
-                    // 使用 height * 0.5 作為閾值，能有效過濾標點符號的微小位移
                     if (currentLine.length > 0) {
                         const lastItemY = currentLine[0].transform[5];
                         if (Math.abs(y - lastItemY) > (height * 0.5)) {
@@ -790,11 +789,10 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 }
                 if (currentLine.length > 0) lines.push(currentLine);
 
-                // --- 步驟 2: 處理每一行，排序並智能合併 ---
-                let pageStr = "";
+                // --- 步驟 2: 行內排序與間距處理 (Gap Threshold 0.4) ---
+                let processedLines = [];
                 
                 for (const line of lines) {
-                    // 根據 X 軸 (transform[4]) 排序，確保從左到右
                     line.sort((a, b) => a.transform[4] - b.transform[4]);
 
                     let lineText = "";
@@ -807,13 +805,12 @@ Output: [Translated Text in Traditional Chinese (HK)]
                         const w = item.width;
                         const fontSize = item.transform[0] || 10;
 
-                        // 判斷是否需要插入空格
+                        // 【修正 A.2】Gap Threshold 調整為 0.4 (避免 Justified 排版產生多餘空格)
                         if (lastItemXEnd !== null) {
                             const gap = x - lastItemXEnd;
-                            // 如果間距顯著 (大於字體大小的 20%)
-                            if (gap > (fontSize * 0.2)) {
+                            if (gap > (fontSize * 0.4)) { 
                                 const currChar = str.charAt(0);
-                                // 只有當前後都不是 CJK 時，才加入空格 (解決英文黏連)
+                                // 【修正 A.1】僅當前後都不是 CJK 時才加空格 (俄文/西文自動包含)
                                 if (!(isCJK(lastChar) && isCJK(currChar))) {
                                     lineText += " ";
                                 }
@@ -824,12 +821,52 @@ Output: [Translated Text in Traditional Chinese (HK)]
                         lastItemXEnd = x + w;
                         lastChar = str.slice(-1);
                     }
-                    // 每一行處理完畢，加入換行符
-                    pageStr += lineText + "\n";
+                    processedLines.push(lineText.trim());
                 }
 
-                if (pageStr.trim().length > 0) {
-                    fullText += `[第 ${i} 頁]\n${pageStr}\n\n`;
+                // --- 步驟 3: 段落重組 (Paragraph Reconstruction) ---
+                let pageParagraphs = "";
+                
+                for (let j = 0; j < processedLines.length; j++) {
+                    const currLine = processedLines[j];
+                    
+                    if (j < processedLines.length - 1) {
+                        const nextLine = processedLines[j + 1];
+                        const lastChar = currLine.slice(-1);
+                        const nextChar = nextLine.charAt(0);
+                        
+                        // 檢查句尾符號 (中西文)
+                        const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
+
+                        if (isSentenceEnd) {
+                            // 真換行 (段落結束)
+                            pageParagraphs += currLine + "\n";
+                        } else {
+                            // 假換行 (句子未完) -> 合併
+                            
+                            // 情況 1: 英文斷詞 (Hyphenation) e.g., "com-" + "puter"
+                            if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) {
+                                // 去除連字號並無縫合併
+                                pageParagraphs += currLine.slice(0, -1); 
+                            } 
+                            // 情況 2: CJK 接 CJK -> 無縫合併
+                            else if (isCJK(lastChar) && isCJK(nextChar)) {
+                                pageParagraphs += currLine;
+                            } 
+                            // 情況 3: 其他 (英+英, 英+中, 俄+俄) -> 補空格合併
+                            else {
+                                pageParagraphs += currLine + " ";
+                            }
+                        }
+                    } else {
+                        // 最後一行
+                        pageParagraphs += currLine + "\n";
+                    }
+                }
+
+                if (pageParagraphs.trim().length > 0) {
+                    // 【修正 B】無障礙標題標記 ##
+                    fullText += `## [第 ${i} 頁]\n${pageParagraphs}\n\n`;
                 }
             }
             return fullText.trim();
