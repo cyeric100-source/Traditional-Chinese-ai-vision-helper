@@ -11,20 +11,20 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 【核心修正】PDF.js v4.10.38 模組化載入 -->
-    <!-- 使用 type="module" 確保正確載入最新穩定版，並解決 is not defined 問題 -->
+    <!-- 【核心修正】PDF.js v5.4.449 模組化載入 (2025 最新穩定版) -->
     <script type="module">
-        import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+        // 載入主程式 v5.4.449
+        import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.min.mjs';
         
-        // 設定 Worker 來源 (必須與主程式版本一致)
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+        // 設定 Worker 來源 (必須與主程式版本嚴格一致)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs';
         
-        // 【關鍵】將 pdfjsLib 掛載到全域 window 物件，讓外部 script 可以呼叫
+        // 將 pdfjsLib 掛載到全域 window 物件
         window.pdfjsLib = pdfjsLib;
         
         // 發送自定義事件通知載入完成
         window.dispatchEvent(new Event('pdfjs-loaded'));
-        console.log("PDF.js v4.10.38 module loaded and exposed to window.");
+        console.log("PDF.js v5.4.449 module loaded and exposed to window.");
     </script>
     
     <style>
@@ -613,12 +613,13 @@ Output: [Translated Text in Traditional Chinese (HK)]
     }
 
     // 將 PDF 轉為圖片陣列 (解決 OpenRouter 不支援 PDF 檔案的問題)
+    // 【修改】加入密碼處理與 v5 邏輯
     async function convertPdfToImages(file) {
         const arrayBuffer = await file.arrayBuffer();
         
-        // 使用 CDN 的 CMaps 與 Fonts (v4.10.38)
-        const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
-        const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/';
+        // 使用 CDN 的 CMaps 與 Fonts (v5.4.449)
+        const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/';
+        const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/standard_fonts/';
         
         const loadingTask = window.pdfjsLib.getDocument({
             data: arrayBuffer,
@@ -626,6 +627,21 @@ Output: [Translated Text in Traditional Chinese (HK)]
             cMapPacked: true,
             standardFontDataUrl: standardFontDataUrl
         });
+
+        // 【新增】v5.x 標準密碼回調
+        loadingTask.onPassword = function (updatePassword, reason) {
+            playAudioCue('error'); // 提示音
+            if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
+                updateStatusBar("文件受保護，請輸入密碼...", "busy");
+                const password = prompt("這份文件受密碼保護，請輸入密碼：");
+                updatePassword(password);
+            } else if (reason === window.pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
+                updateStatusBar("密碼錯誤！", "error");
+                alert("密碼錯誤，請重新輸入。");
+                const password = prompt("密碼錯誤！請重新輸入：");
+                updatePassword(password);
+            }
+        };
         
         const pdf = await loadingTask.promise;
         const maxPages = pdf.numPages;
@@ -708,20 +724,14 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    // 智能 CJK 合併演算法 (去除多餘空格)
-    function isCJK(str) {
-        if (!str) return false;
-        // 包含：中日韓文字、全形標點、假名、諺文
-        return /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(str);
-    }
-
+    // 【修改】v5 核心文字提取與 CJK 智能排版優化
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             
-            // 指定 CDN 資源路徑 (v4.10.38)
-            const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/cmaps/';
-            const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/standard_fonts/';
+            // 指定 CDN 資源路徑 (v5.4.449)
+            const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/';
+            const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/standard_fonts/';
             
             const loadingTask = window.pdfjsLib.getDocument({
                 data: arrayBuffer,
@@ -730,10 +740,28 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 standardFontDataUrl: standardFontDataUrl
             });
 
+            // 【新增】v5.x 標準密碼回調
+            loadingTask.onPassword = function (updatePassword, reason) {
+                playAudioCue('error');
+                if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
+                    updateStatusBar("需要密碼解鎖 PDF...", "busy");
+                    const password = prompt("這份文件受密碼保護，請輸入密碼：");
+                    updatePassword(password);
+                } else if (reason === window.pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
+                    updateStatusBar("密碼錯誤", "error");
+                    alert("密碼錯誤，請重新輸入。");
+                    const password = prompt("密碼錯誤！請重新輸入：");
+                    updatePassword(password);
+                }
+            };
+
             const pdf = await loadingTask.promise;
             let fullText = "";
             const maxPages = pdf.numPages;
             
+            // 定義 CJK 字符範圍 (含擴充)
+            const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
+
             for (let i = 1; i <= maxPages; i++) {
                 if (reportProgress) updateStatusBar(`正在提取文字 (第 ${i} / ${maxPages} 頁)...`, "busy");
                 
@@ -741,27 +769,28 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 const textContent = await page.getTextContent();
                 
                 let pageStr = "";
-                let lastItemStr = "";
+                let lastChar = ""; // 追蹤上一個有效字符
                 
                 for (const item of textContent.items) {
                     const str = item.str;
                     if (!str) continue;
 
-                    // 【核心優化】CJK 字符間不加空格，其他情況加空格
-                    const isCurrentCJK = isCJK(str.charAt(0)); 
-                    const isLastCJK = lastItemStr ? isCJK(lastItemStr.slice(-1)) : false;
+                    const currChar = str.charAt(0);
                     
-                    if (lastItemStr && !item.hasEOL) {
-                        // 僅在非 CJK 字符間加入空格 (如英文單字之間)
-                        // 若前後有任一為 CJK，則視為緊密排列，不加空格
-                        if (!isLastCJK && !isCurrentCJK) {
+                    // 【優化】智能空格邏輯
+                    if (lastChar && !item.hasEOL) {
+                        // 若前後都是 CJK，緊密排列 (不加空格)
+                        if (isCJK(lastChar.slice(-1)) && isCJK(currChar)) {
+                            // no space
+                        } else {
+                            // 其他情況 (英+英, 英+中)，加入空格以利閱讀
                             pageStr += " "; 
                         }
                     }
                     
                     pageStr += str;
                     if (item.hasEOL) pageStr += "\n";
-                    lastItemStr = str;
+                    lastChar = str;
                 }
 
                 if (pageStr.trim().length > 0) {
@@ -771,7 +800,10 @@ Output: [Translated Text in Traditional Chinese (HK)]
             return fullText.trim();
         } catch (e) {
             console.error("PDF extract error", e);
-            return null; 
+            if (e.name === 'PasswordException') {
+                return null; // 密碼錯誤已處理，這裡直接返回
+            }
+            throw e;
         }
     }
 
