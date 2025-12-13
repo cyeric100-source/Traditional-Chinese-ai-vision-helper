@@ -724,12 +724,11 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    // 【修改】v5 核心文字提取與 CJK 智能排版優化
+    // 【修改】v5 核心文字提取 - 引入行緩衝區與智能排序邏輯
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             
-            // 指定 CDN 資源路徑 (v5.4.449)
             const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/';
             const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/standard_fonts/';
             
@@ -740,7 +739,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 standardFontDataUrl: standardFontDataUrl
             });
 
-            // 【新增】v5.x 標準密碼回調
+            // 密碼處理
             loadingTask.onPassword = function (updatePassword, reason) {
                 playAudioCue('error');
                 if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
@@ -768,29 +767,65 @@ Output: [Translated Text in Traditional Chinese (HK)]
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 
-                let pageStr = "";
-                let lastChar = ""; // 追蹤上一個有效字符
+                // --- 步驟 1: 基於 Y 軸座標將文字項目分組 (Line Buffer) ---
+                let lines = [];
+                let currentLine = [];
                 
                 for (const item of textContent.items) {
-                    const str = item.str;
-                    if (!str) continue;
-
-                    const currChar = str.charAt(0);
+                    if (!item.str) continue;
                     
-                    // 【優化】智能空格邏輯
-                    if (lastChar && !item.hasEOL) {
-                        // 若前後都是 CJK，緊密排列 (不加空格)
-                        if (isCJK(lastChar.slice(-1)) && isCJK(currChar)) {
-                            // no space
-                        } else {
-                            // 其他情況 (英+英, 英+中)，加入空格以利閱讀
-                            pageStr += " "; 
+                    const y = item.transform[5]; // Y 軸座標
+                    const height = item.transform[3] || item.height || 10; // 字體高度
+                    
+                    // 判斷換行：如果當前物件的 Y 座標與同一行有顯著差異，則視為新的一行
+                    // 使用 height * 0.5 作為閾值，能有效過濾標點符號的微小位移
+                    if (currentLine.length > 0) {
+                        const lastItemY = currentLine[0].transform[5];
+                        if (Math.abs(y - lastItemY) > (height * 0.5)) {
+                            lines.push(currentLine);
+                            currentLine = [];
                         }
                     }
-                    
-                    pageStr += str;
-                    if (item.hasEOL) pageStr += "\n";
-                    lastChar = str;
+                    currentLine.push(item);
+                }
+                if (currentLine.length > 0) lines.push(currentLine);
+
+                // --- 步驟 2: 處理每一行，排序並智能合併 ---
+                let pageStr = "";
+                
+                for (const line of lines) {
+                    // 根據 X 軸 (transform[4]) 排序，確保從左到右
+                    line.sort((a, b) => a.transform[4] - b.transform[4]);
+
+                    let lineText = "";
+                    let lastItemXEnd = null;
+                    let lastChar = "";
+
+                    for (const item of line) {
+                        const str = item.str;
+                        const x = item.transform[4];
+                        const w = item.width;
+                        const fontSize = item.transform[0] || 10;
+
+                        // 判斷是否需要插入空格
+                        if (lastItemXEnd !== null) {
+                            const gap = x - lastItemXEnd;
+                            // 如果間距顯著 (大於字體大小的 20%)
+                            if (gap > (fontSize * 0.2)) {
+                                const currChar = str.charAt(0);
+                                // 只有當前後都不是 CJK 時，才加入空格 (解決英文黏連)
+                                if (!(isCJK(lastChar) && isCJK(currChar))) {
+                                    lineText += " ";
+                                }
+                            }
+                        }
+                        
+                        lineText += str;
+                        lastItemXEnd = x + w;
+                        lastChar = str.slice(-1);
+                    }
+                    // 每一行處理完畢，加入換行符
+                    pageStr += lineText + "\n";
                 }
 
                 if (pageStr.trim().length > 0) {
@@ -801,7 +836,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         } catch (e) {
             console.error("PDF extract error", e);
             if (e.name === 'PasswordException') {
-                return null; // 密碼錯誤已處理，這裡直接返回
+                return null;
             }
             throw e;
         }
