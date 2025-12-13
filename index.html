@@ -209,7 +209,8 @@
 </head>
 <body>
 
-<!-- 頂部狀態列 (修正: aria-live 預設為 polite, 加入 tabindex 以便聚焦) -->
+<!-- 頂部狀態列 -->
+<!-- 無障礙修正：預設 aria-live="polite" (禮貌模式)，加入 tabindex="-1" 以支援 JS 聚焦 -->
 <div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中...</div>
 
 <div class="container">
@@ -300,14 +301,14 @@
                 📄 PDF 完整閱讀 (智能偵測啟動)
             </button>
             <small style="display:block; margin: 5px 0 15px 0; color:#ccc;">
-                * 說明：自動偵測文字版或圖像版。若為圖像版，將自動切換至 Gemini 2.5 Flash 進行完整 OCR。
+                * 說明：優先使用本機提取（省錢且支援多國語言）。若無法提取，將自動切換至 Gemini 2.5 Flash 進行 OCR。
             </small>
 
             <div class="row">
                 <!-- 控制項 B -->
                 <label class="check-btn">
                     <input type="checkbox" id="pdf-always-ai">
-                    <span>總是將 PDF 傳給 AI (不使用本機提取)</span>
+                    <span>總是將 PDF 傳給 AI (跳過本機提取)</span>
                 </label>
 
                 <!-- 控制項 C -->
@@ -373,7 +374,8 @@
         if (statusBar) {
             statusBar.innerText = `發生錯誤: ${message}`;
             statusBar.className = 'error';
-            statusBar.setAttribute('aria-live', 'assertive'); // 錯誤時強調提示
+            // 發生錯誤時切換為 assertive 以確保讀出
+            statusBar.setAttribute('aria-live', 'assertive');
         }
         console.error("Global Error:", message, error);
     };
@@ -428,7 +430,7 @@ Input: [Source Text/Document]
 Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v11_pdf_legacy";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v12_pdf_blob_legacy";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -447,7 +449,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
     let chatHistory = [];
     let audioContext = null;
     let allCurrentModels = [];
-    let pdfCMapUrl = "";
 
     function unlockAudioContext() {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -494,26 +495,22 @@ Output: [Translated Text in Traditional Chinese (HK)]
     document.addEventListener('DOMContentLoaded', async () => {
         try {
             // PDF.js Configuration (Version 4.10.38 - Legacy Build)
-            // 修正: 使用 legacy build 路徑以提升相容性
             if (typeof pdfjsLib !== 'undefined') {
-                const pdfVersion = '4.10.38'; 
-                // 使用 legacy 版本以支援較舊環境並模擬單一檔案行為
-                const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfVersion}/legacy`;
-                const workerUrl = `${baseUrl}/build/pdf.worker.min.js`;
-                pdfCMapUrl = `${baseUrl}/cmaps/`; 
-
+                const legacyBaseUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy';
+                const workerUrl = `${legacyBaseUrl}/build/pdf.worker.min.js`;
+                
+                // 修正：使用 fetch + Blob 建立本地 Worker URL，解決跨網域問題
                 try {
-                    // 修正: 強制使用 Blob 載入 Worker 以規避跨網域 (CORS) 問題
                     const response = await fetch(workerUrl);
                     if (response.ok) {
                         const blob = await response.blob();
                         pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                        console.log("PDF Worker loaded via Blob URL successfully.");
                     } else {
-                         // 備援: 若無法 fetch (極少見)，才使用網址 (可能會遇上 CORS 阻擋)
-                         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+                        throw new Error("Worker fetch failed");
                     }
                 } catch (e) {
-                    console.warn("Worker Blob fetch failed, falling back to URL", e);
+                    console.warn("Worker Blob fetch failed, falling back to CDN URL (might fail on CORS)", e);
                     pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
                 }
             }
@@ -585,7 +582,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const input = document.getElementById('pdf-tool-input');
         if (input.files.length > 0) {
             processPDFTool(input.files[0]);
-            // 修正: 選擇檔案後，將焦點移回狀態列，避免迷失
+            // 無障礙修正：將焦點移回狀態列，防止迷失
             document.getElementById('status-bar').focus();
         }
         input.value = ""; 
@@ -599,22 +596,27 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const forceTranslate = document.getElementById('pdf-translate').checked;
 
         try {
+            // 情境 1: 強制 AI 模式
             if (alwaysAI) {
                 updateStatusBar("正在上傳 PDF 給 AI (Gemini 2.5) 完整讀取...", "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
                 return;
             }
 
+            // 情境 2: 嘗試本機提取
             updateStatusBar("正在嘗試本機提取文字...", "busy");
             const localText = await extractTextFromPDF(file, true); 
 
+            // 判斷提取結果是否有意義 (過濾空白與極短文字)
             const charCount = localText ? localText.replace(/\s/g, '').length : 0;
 
             if (charCount > 20) {
                 if (forceTranslate) {
+                    // 若需翻譯，則將提取的文字送出
                     updateStatusBar("本機提取成功，正在傳送給 AI 進行完整翻譯...", "busy");
                     await performAIProcessing(null, "translate_text", localText);
                 } else {
+                    // 修正：若無須翻譯，直接顯示本機結果，不再送給 AI
                     updateStatusBar("本機提取完成", "ready");
                     addMessage('assistant', localText);
                     playAudioCue('success');
@@ -622,6 +624,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     output.lastChild.focus();
                 }
             } else {
+                // 情境 3: 本機提取失敗 (如純圖片 PDF)，轉交 AI
                 updateStatusBar(`本機提取文字過少 (${charCount} 字)，轉用 AI (Gemini 2.5) 完整識別...`, "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
             }
@@ -668,13 +671,13 @@ Output: [Translated Text in Traditional Chinese (HK)]
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
-            // 使用 legacy build 的 CMap 
-            const baseUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy`;
+            // 修正：CMaps 路徑，支援多國語言 (CJK)
+            const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/cmaps/';
             
             const loadingTask = pdfjsLib.getDocument({
                 data: arrayBuffer,
-                cMapUrl: `${baseUrl}/cmaps/`, 
-                cMapPacked: true
+                cMapUrl: cMapUrl, 
+                cMapPacked: true // 必須設定為 true 才能正確載入字型映射
             });
 
             const pdf = await loadingTask.promise;
@@ -773,12 +776,12 @@ Output: [Translated Text in Traditional Chinese (HK)]
     function initDragAndDrop() { const d = document.getElementById('user-input'); d.ondragover = e => {e.preventDefault(); d.classList.add('dragover')}; d.ondragleave = () => d.classList.remove('dragover'); d.ondrop = e => {e.preventDefault(); d.classList.remove('dragover'); handleFileSelect(e.dataTransfer.files[0]);}; }
     function initEnterKey() { document.getElementById('user-input').onkeydown = e => { if(e.key==='Enter' && !e.shiftKey && document.getElementById('enter-to-send').checked) { e.preventDefault(); document.getElementById('submit-btn').click(); } }; }
     
-    // 修正: aria-live 切換邏輯
+    // 無障礙修正：狀態切換邏輯
     function updateStatusBar(t, s='ready') { 
         const b = document.getElementById('status-bar'); 
         b.innerText = t; 
         b.className = s; 
-        // 僅在錯誤時使用 assertive，其餘時間使用 polite (避免打斷語音)
+        // 僅在錯誤時使用 assertive (強制插話)，其他時間使用 polite
         b.setAttribute('aria-live', s === 'error' ? 'assertive' : 'polite');
     }
     
@@ -897,7 +900,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
             let parts = file ? [{inline_data:{mime_type:mime, data:file}}, {text:txt}] : [{text:txt}];
             body = { system_instruction:{parts:[{text:sys}]}, contents:[{role:"user", parts:parts}] };
         } else {
-            // 修正: 針對 Mistral 與 Perplexity 的正確 API 判斷
+            // 修正：補上其他服務商的正確 API 網址
             if (p === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = location.href;
