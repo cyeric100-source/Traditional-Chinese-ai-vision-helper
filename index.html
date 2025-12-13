@@ -8,10 +8,10 @@
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
     
-    <!-- 引入 DOMPurify 進行 HTML 消毒 (安全性修正) -->
+    <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 引入 PDF.js 核心 (使用 Legacy 版本以確保最佳相容性與 Worker 支援) -->
+    <!-- 引入 PDF.js 核心 (v4.10.38 Legacy - 確保最佳相容性) -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.js"></script>
     
     <style>
@@ -25,9 +25,8 @@
             --input-bg: #1A1A1A;
             --button-bg: #FFFF00;
             --button-text: #000000;
-            --status-bg: #222;            /* 狀態列背景 */
-            --danger-color: #ff4444;      /* 危險操作色 */
-            --tool-bg: #112233;           /* 工具區背景 */
+            --status-bg: #222;
+            --tool-bg: #112233;
         }
 
         body {
@@ -36,7 +35,7 @@
             color: var(--text-color);
             margin: 0; padding: 0;
             font-size: 1.2rem; line-height: 1.6;
-            padding-top: 60px; /* 預留頂部狀態列空間 */
+            padding-top: 60px;
         }
 
         .container {
@@ -87,9 +86,7 @@
         button.mini-copy-btn:hover { background-color: #555; }
         
         button.danger {
-            background-color: #550000;
-            color: #ffcccc;
-            border-color: #ff4444;
+            background-color: #550000; color: #ffcccc; border-color: #ff4444;
         }
 
         button.tool-btn {
@@ -97,13 +94,7 @@
         }
 
         button.recording {
-            background-color: #ff0000 !important;
-            color: #ffffff !important;
-            animation: pulse 1.5s infinite;
-        }
-        button.processing {
-            background-color: #ff8800 !important;
-            animation: pulse 0.5s infinite;
+            background-color: #ff0000 !important; color: #ffffff !important; animation: pulse 1.5s infinite;
         }
 
         @keyframes pulse {
@@ -112,20 +103,11 @@
             100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
         }
 
-        @media (prefers-reduced-motion: reduce) {
-            button.recording, button.processing {
-                animation: none !important;
-                box-shadow: 0 0 0 4px rgba(255, 0, 0, 0.5);
-            }
-            * { transition: none !important; }
-        }
-
         details { border: 1px solid var(--border-color); padding: 10px; border-radius: 8px; margin-bottom: 10px; background: #111; }
         summary { cursor: pointer; padding: 5px; }
         
         .pdf-tool-group {
-            background: var(--tool-bg);
-            border: 2px solid #005588;
+            background: var(--tool-bg); border: 2px solid #005588;
         }
         .pdf-tool-group h2 { color: #88ccff; border-bottom-color: #005588; }
         
@@ -204,13 +186,11 @@
         .settings-subsection { border: 1px solid #444; padding: 10px; border-radius: 6px; margin: 10px 0; background: #222; }
         .settings-subsection h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: var(--accent-color); }
         .export-actions { margin-bottom: 20px; display: flex; gap: 10px; }
-        .export-actions button { margin-top: 0; font-size: 1rem; padding: 8px; }
     </style>
 </head>
 <body>
 
-<!-- 頂部狀態列 -->
-<!-- 無障礙修正：預設 aria-live="polite" (禮貌模式)，加入 tabindex="-1" 以支援 JS 聚焦 -->
+<!-- 狀態列：預設 polite 禮貌模式，避免語音干擾 -->
 <div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中...</div>
 
 <div class="container">
@@ -226,7 +206,7 @@
             <label for="provider-select">主要 AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
                 <option value="gemini">Google Gemini (推薦)</option>
-                <option value="openrouter">OpenRouter (多模型)</option>
+                <option value="openrouter">OpenRouter (多模型 - 支援 CORS)</option>
                 <option value="mistral">Mistral AI</option>
                 <option value="openai">OpenAI (GPT)</option>
                 <option value="groq">Groq</option>
@@ -301,7 +281,7 @@
                 📄 PDF 完整閱讀 (智能偵測啟動)
             </button>
             <small style="display:block; margin: 5px 0 15px 0; color:#ccc;">
-                * 說明：優先使用本機提取（省錢且支援多國語言）。若無法提取，將自動切換至 Gemini 2.5 Flash 進行 OCR。
+                * 說明：支援繁/簡/日/韓/英等多國語言。程式會優先嘗試本機提取，失敗才轉交 AI。
             </small>
 
             <div class="row">
@@ -374,7 +354,6 @@
         if (statusBar) {
             statusBar.innerText = `發生錯誤: ${message}`;
             statusBar.className = 'error';
-            // 發生錯誤時切換為 assertive 以確保讀出
             statusBar.setAttribute('aria-live', 'assertive');
         }
         console.error("Global Error:", message, error);
@@ -430,11 +409,12 @@ Input: [Source Text/Document]
 Output: [Translated Text in Traditional Chinese (HK)]
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v12_pdf_blob_legacy";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v13_pdf_cjk_final";
     
+    // 定義各家 AI 服務商的設定與模型
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
-        openrouter: { prompt: DEFAULT_PROMPT, defaultModel: "openai/gpt-4o", canFetch: true, listUrl: "https://openrouter.ai/api/v1/models", models: ["openai/gpt-4o", "google/gemini-2.5-flash"] },
+        openrouter: { prompt: DEFAULT_PROMPT, defaultModel: "openai/gpt-4o", canFetch: true, listUrl: "https://openrouter.ai/api/v1/models", models: ["openai/gpt-4o", "google/gemini-2.5-flash", "google/gemini-flash-1.5", "anthropic/claude-3.5-sonnet"] },
         mistral: { prompt: DEFAULT_PROMPT, defaultModel: "mistral-large-latest", canFetch: true, listUrl: "https://api.mistral.ai/v1/models", models: ["mistral-large-latest"] },
         openai: { prompt: DEFAULT_PROMPT, defaultModel: "gpt-4o", canFetch: true, listUrl: "https://api.openai.com/v1/models", models: ["gpt-4o"] },
         groq: { prompt: DEFAULT_PROMPT, defaultModel: "llama-3.3-70b-versatile", canFetch: true, listUrl: "https://api.groq.com/openai/v1/models", models: ["llama-3.3-70b-versatile"] },
@@ -494,12 +474,12 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
-            // PDF.js Configuration (Version 4.10.38 - Legacy Build)
+            // PDF.js 核心初始化 (v4.10.38 Legacy)
             if (typeof pdfjsLib !== 'undefined') {
                 const legacyBaseUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy';
                 const workerUrl = `${legacyBaseUrl}/build/pdf.worker.min.js`;
                 
-                // 修正：使用 fetch + Blob 建立本地 Worker URL，解決跨網域問題
+                // 【核心修正】嘗試使用 Blob URL 載入 Worker 以繞過 CORS
                 try {
                     const response = await fetch(workerUrl);
                     if (response.ok) {
@@ -507,10 +487,12 @@ Output: [Translated Text in Traditional Chinese (HK)]
                         pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
                         console.log("PDF Worker loaded via Blob URL successfully.");
                     } else {
-                        throw new Error("Worker fetch failed");
+                        // 若 fetch 失敗，回退到一般 URL (這在某些環境會被擋)
+                        console.warn("Worker fetch returned status:", response.status);
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
                     }
                 } catch (e) {
-                    console.warn("Worker Blob fetch failed, falling back to CDN URL (might fail on CORS)", e);
+                    console.warn("Worker Blob fetch failed (likely CORS), falling back to CDN URL.", e);
                     pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
                 }
             }
@@ -582,8 +564,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const input = document.getElementById('pdf-tool-input');
         if (input.files.length > 0) {
             processPDFTool(input.files[0]);
-            // 無障礙修正：將焦點移回狀態列，防止迷失
-            document.getElementById('status-bar').focus();
+            document.getElementById('status-bar').focus(); // 無障礙焦點管理
         }
         input.value = ""; 
     }
@@ -596,27 +577,24 @@ Output: [Translated Text in Traditional Chinese (HK)]
         const forceTranslate = document.getElementById('pdf-translate').checked;
 
         try {
-            // 情境 1: 強制 AI 模式
             if (alwaysAI) {
                 updateStatusBar("正在上傳 PDF 給 AI (Gemini 2.5) 完整讀取...", "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
                 return;
             }
 
-            // 情境 2: 嘗試本機提取
-            updateStatusBar("正在嘗試本機提取文字...", "busy");
+            updateStatusBar("正在嘗試本機提取文字 (支援多國語言)...", "busy");
             const localText = await extractTextFromPDF(file, true); 
 
-            // 判斷提取結果是否有意義 (過濾空白與極短文字)
+            // 判斷是否成功提取 (過濾空白)
             const charCount = localText ? localText.replace(/\s/g, '').length : 0;
 
             if (charCount > 20) {
                 if (forceTranslate) {
-                    // 若需翻譯，則將提取的文字送出
                     updateStatusBar("本機提取成功，正在傳送給 AI 進行完整翻譯...", "busy");
                     await performAIProcessing(null, "translate_text", localText);
                 } else {
-                    // 修正：若無須翻譯，直接顯示本機結果，不再送給 AI
+                    // 若無須翻譯，直接顯示結果
                     updateStatusBar("本機提取完成", "ready");
                     addMessage('assistant', localText);
                     playAudioCue('success');
@@ -624,8 +602,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     output.lastChild.focus();
                 }
             } else {
-                // 情境 3: 本機提取失敗 (如純圖片 PDF)，轉交 AI
-                updateStatusBar(`本機提取文字過少 (${charCount} 字)，轉用 AI (Gemini 2.5) 完整識別...`, "busy");
+                updateStatusBar(`本機提取文字過少 (${charCount} 字)，可能為圖像版 PDF，轉用 AI 識別...`, "busy");
                 await performAIProcessing(file, forceTranslate ? "translate_only" : "ocr_strict", null);
             }
         } catch (e) {
@@ -639,12 +616,25 @@ Output: [Translated Text in Traditional Chinese (HK)]
         let targetModel = currentActiveModelId;
 
         if (fileObj && fileObj.type === 'application/pdf') {
+            // 強制使用 Gemini 模型處理 PDF
             targetProvider = 'gemini';
             const storedGeminiKey = localStorage.getItem('gemini_key');
             if (document.getElementById('provider-select').value === 'gemini') targetApiKey = document.getElementById('api-key').value;
             else if (storedGeminiKey) targetApiKey = storedGeminiKey;
-            else throw new Error("處理 PDF 必須使用 Google Gemini 服務。請先在設定中切換至 'Google Gemini'，輸入 API Key 並儲存。");
-            targetModel = "gemini-2.5-flash"; 
+            
+            // 若主要 Provider 不是 Gemini，且沒有備用 Key，則提示錯誤
+            if (!targetApiKey) {
+                // 智慧引導：若用戶使用 OpenRouter，嘗試使用 OpenRouter 的 Gemini 模型
+                if (document.getElementById('provider-select').value === 'openrouter') {
+                    targetProvider = 'openrouter';
+                    targetApiKey = document.getElementById('api-key').value;
+                    targetModel = "google/gemini-2.5-flash"; // OpenRouter 的 Gemini ID
+                } else {
+                    throw new Error("處理 PDF 必須使用 Google Gemini。請切換至 'Google Gemini' 或 'OpenRouter' 並輸入 API Key。");
+                }
+            } else {
+                targetModel = "gemini-2.5-flash";
+            }
         }
         if (!targetApiKey) throw new Error("請先設定 API Key");
         
@@ -663,6 +653,12 @@ Output: [Translated Text in Traditional Chinese (HK)]
             const response = await callAI(targetProvider, userText, fileData, mimeType, controller.signal, targetModel, targetApiKey);
             addMessage('assistant', response); playAudioCue('success'); updateStatusBar("處理完成", "ready");
             document.getElementById('chat-output').lastChild.focus();
+        } catch (e) {
+            if (e.message.includes("Failed to fetch") && targetProvider === 'gemini') {
+                throw new Error("Google 拒絕瀏覽器直接連線 (CORS 錯誤)。\n請改用 'OpenRouter' 服務商 (它支援 Gemini 模型且允許瀏覽器連線)。");
+            } else {
+                throw e;
+            }
         } finally {
             document.getElementById('system-prompt').value = originalPromptVal;
         }
@@ -671,13 +667,15 @@ Output: [Translated Text in Traditional Chinese (HK)]
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
-            // 修正：CMaps 路徑，支援多國語言 (CJK)
+            
+            // 【核心修正】指定 CMap URL 以支援繁體中文、日文、韓文
+            // 使用 Legacy build 對應的 cmaps 目錄
             const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/cmaps/';
             
             const loadingTask = pdfjsLib.getDocument({
                 data: arrayBuffer,
                 cMapUrl: cMapUrl, 
-                cMapPacked: true // 必須設定為 true 才能正確載入字型映射
+                cMapPacked: true // 必須開啟
             });
 
             const pdf = await loadingTask.promise;
@@ -697,6 +695,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
                     const str = item.str;
                     if (!str) continue;
 
+                    // 簡單的 CJK 排版優化：若是 CJK 字符，不加空格
                     const isCurrentCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(str[0]);
                     const isLastCJK = lastItemStr ? /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(lastItemStr.slice(-1)) : false;
                     
@@ -776,12 +775,10 @@ Output: [Translated Text in Traditional Chinese (HK)]
     function initDragAndDrop() { const d = document.getElementById('user-input'); d.ondragover = e => {e.preventDefault(); d.classList.add('dragover')}; d.ondragleave = () => d.classList.remove('dragover'); d.ondrop = e => {e.preventDefault(); d.classList.remove('dragover'); handleFileSelect(e.dataTransfer.files[0]);}; }
     function initEnterKey() { document.getElementById('user-input').onkeydown = e => { if(e.key==='Enter' && !e.shiftKey && document.getElementById('enter-to-send').checked) { e.preventDefault(); document.getElementById('submit-btn').click(); } }; }
     
-    // 無障礙修正：狀態切換邏輯
     function updateStatusBar(t, s='ready') { 
         const b = document.getElementById('status-bar'); 
         b.innerText = t; 
         b.className = s; 
-        // 僅在錯誤時使用 assertive (強制插話)，其他時間使用 polite
         b.setAttribute('aria-live', s === 'error' ? 'assertive' : 'polite');
     }
     
@@ -900,7 +897,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
             let parts = file ? [{inline_data:{mime_type:mime, data:file}}, {text:txt}] : [{text:txt}];
             body = { system_instruction:{parts:[{text:sys}]}, contents:[{role:"user", parts:parts}] };
         } else {
-            // 修正：補上其他服務商的正確 API 網址
+            // 完整支援各大模型 API
             if (p === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
                 headers['HTTP-Referer'] = location.href;
@@ -912,7 +909,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
             } else if (p === 'openai') {
                 url = "https://api.openai.com/v1/chat/completions";
             } else {
-                // 預設為 Groq
+                // 預設 Groq
                 url = "https://api.groq.com/openai/v1/chat/completions";
             }
 
