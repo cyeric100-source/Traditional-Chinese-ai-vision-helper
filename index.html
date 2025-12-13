@@ -389,7 +389,7 @@
 3. **精簡**：重點置前，避免冗長。
 `;
 
-    // 【修正 1】更新 OCR 提示詞 (Strict Golden Prompt)
+    // OCR 黃金指令 (Strict)
     const PDF_OCR_PROMPT = `
 # SYSTEM ROLE
 You are a state-of-the-art Optical Character Recognition (OCR) engine, NOT an AI assistant. Your sole purpose is to convert image pixels into exact text strings.
@@ -417,7 +417,7 @@ Transcribe EVERY single visible character from the provided document image(s) in
 Return ONLY the raw string of the transcribed text.
 `;
 
-    // 【修正 2】更新翻譯提示詞 (Complete Golden Prompt)
+    // 翻譯黃金指令 (Complete)
     const PDF_TRANSLATE_PROMPT = `
 # SYSTEM ROLE
 You are a professional textual translator specializing in localization for Traditional Chinese (Hong Kong/Taiwan usage). You are NOT a summarizer.
@@ -443,7 +443,7 @@ Translate the provided source content FULLY and ACCURATELY into fluent, natural 
 Output purely the translated text. Do not add introductions like "Here is the translation".
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v19_final_vision";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v20_final_sequential";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -462,6 +462,9 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     let chatHistory = [];
     let audioContext = null;
     let allCurrentModels = [];
+
+    // 輔助函式：Sleep
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     function unlockAudioContext() {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -594,7 +597,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             if (alwaysAI) {
                 updateStatusBar("正在將 PDF 轉為圖片以進行 AI 完整辨識...", "busy");
                 const images = await convertPdfToImages(file);
-                // 【注意】這裡 images 是圖片陣列，會觸發 performAIProcessing 的並行處理邏輯
+                // 這裡 images 是陣列，會觸發序列化處理邏輯
                 await performAIProcessing(images, forceTranslate ? "translate_only" : "ocr_strict", null);
                 return;
             }
@@ -626,12 +629,9 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         }
     }
 
-    // 將 PDF 轉為圖片陣列 (解決 OpenRouter 不支援 PDF 檔案的問題)
-    // 【修改】加入密碼處理與 v5 邏輯
     async function convertPdfToImages(file) {
         const arrayBuffer = await file.arrayBuffer();
         
-        // 使用 CDN 的 CMaps 與 Fonts (v5.4.449)
         const cMapUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/';
         const standardFontDataUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/standard_fonts/';
         
@@ -642,9 +642,8 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             standardFontDataUrl: standardFontDataUrl
         });
 
-        // 【新增】v5.x 標準密碼回調
         loadingTask.onPassword = function (updatePassword, reason) {
-            playAudioCue('error'); // 提示音
+            playAudioCue('error');
             if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
                 updateStatusBar("文件受保護，請輸入密碼...", "busy");
                 const password = prompt("這份文件受密碼保護，請輸入密碼：");
@@ -661,12 +660,13 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         const maxPages = pdf.numPages;
         const images = [];
         
-        const limit = Math.min(maxPages, 15); 
+        // 為了序列化處理，我們可以適度放寬頁數限制，因為不再是並行轟炸
+        const limit = Math.min(maxPages, 20); 
 
         for (let i = 1; i <= limit; i++) {
             updateStatusBar(`正在渲染 PDF 頁面 (${i}/${limit})...`, 'busy');
             const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.5 }); // 1.5倍縮放確保文字清晰
+            const viewport = page.getViewport({ scale: 1.5 });
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
@@ -674,9 +674,8 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
             await page.render({ canvasContext: context, viewport: viewport }).promise;
             
-            // 轉為 Base64 (JPEG 格式)
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            images.push(dataUrl.split(',')[1]); // 去除 Data URL 前綴
+            images.push(dataUrl.split(',')[1]); 
         }
         return images;
     }
@@ -688,7 +687,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
         const isImageArray = Array.isArray(inputData);
 
-        // API Key 檢查邏輯
         if (isImageArray) {
             targetProvider = 'gemini';
             const storedGeminiKey = localStorage.getItem('gemini_key');
@@ -718,34 +716,66 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         try {
             chatHistory = []; 
             
-            // 【修正 3】分頁並行請求 + 程式碼注入標題 (Parallel + Programmatic Header Injection)
+            // 【修正】序列化處理迴圈 (Sequential Loop) + 錯誤重試
             if (isImageArray) {
-                updateStatusBar(`正在並行處理 ${inputData.length} 頁文件 (Gemini Vision)...`, "busy");
+                updateStatusBar(`正在處理 ${inputData.length} 頁文件 (序列化處理以確保完整性)...`, "busy");
                 
-                // 定義單頁的使用者指令 (確保 AI 專注於單頁)
                 const singlePageUserPrompt = mode === "ocr_strict" 
                     ? "Transcribe this page exactly." 
                     : "Translate this page exactly into Traditional Chinese.";
 
-                // 使用 Promise.all 發送所有並行請求
-                const promises = inputData.map(async (imgBase64, index) => {
-                    const pageNum = index + 1;
-                    try {
-                        // 呼叫 AI 處理單一圖片 (注意：這裡傳入的是單一字串，非陣列)
-                        const res = await callAI(targetProvider, singlePageUserPrompt, imgBase64, "image/jpeg", controller.signal, targetModel, targetApiKey);
-                        
-                        // 【關鍵】由程式碼注入標題，而非依賴 AI
-                        return `## [第 ${pageNum} 頁]\n${res}`;
-                    } catch (err) {
-                        return `## [第 ${pageNum} 頁]\n(此頁處理失敗: ${err.message})`;
-                    }
-                });
+                let fullResponse = "";
 
-                // 等待所有頁面處理完成
-                const results = await Promise.all(promises);
-                const fullResponse = results.join("\n\n");
-                
+                for (let i = 0; i < inputData.length; i++) {
+                    const imgBase64 = inputData[i];
+                    const pageNum = i + 1;
+                    let success = false;
+                    let retryCount = 0;
+                    const maxRetries = 3;
+
+                    // 重試迴圈
+                    while (!success && retryCount < maxRetries) {
+                        try {
+                            updateStatusBar(`正在處理第 ${pageNum}/${inputData.length} 頁${retryCount>0?` (重試 ${retryCount})`:''} ...`, "busy");
+
+                            // 呼叫 AI (單頁)
+                            const res = await callAI(targetProvider, singlePageUserPrompt, imgBase64, "image/jpeg", controller.signal, targetModel, targetApiKey);
+                            
+                            // 程式碼注入標題
+                            const pageContent = `## [第 ${pageNum} 頁]\n${res}\n\n`;
+                            fullResponse += pageContent;
+                            success = true;
+
+                            // 成功後的人工冷卻 (避免瞬間觸發 Rate Limit)
+                            if (i < inputData.length - 1) {
+                                updateStatusBar(`第 ${pageNum} 頁完成，冷卻中 (避免觸發限制)...`, "busy");
+                                await sleep(2000); // 休息 2 秒
+                            }
+
+                        } catch (err) {
+                            // 捕捉 429 或其他資源耗盡錯誤
+                            if (err.message.includes("429") || err.message.includes("quota") || err.message.includes("RESOURCE_EXHAUSTED")) {
+                                const waitTime = 30; // 預設等待 30 秒
+                                updateStatusBar(`流量限制 (429)，將在 ${waitTime} 秒後自動重試第 ${pageNum} 頁...`, "busy");
+                                await sleep(waitTime * 1000);
+                                retryCount++;
+                            } else {
+                                // 其他錯誤則記錄並跳過
+                                console.error(err);
+                                fullResponse += `## [第 ${pageNum} 頁]\n(處理失敗: ${err.message})\n\n`;
+                                success = true; // 視為完成，繼續下一頁
+                            }
+                        }
+                    }
+                    
+                    if (!success) {
+                        fullResponse += `## [第 ${pageNum} 頁]\n(重試多次後仍失敗)\n\n`;
+                    }
+                }
+
+                // 最終一次性顯示完整結果
                 addMessage('assistant', fullResponse);
+
             } else {
                 // 原有文字處理邏輯 (Text Mode)
                 let userText = mode === "translate_text" ? `[SOURCE TEXT TO TRANSLATE]:\n${textData}` : "Please process this request.";
@@ -766,7 +796,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         }
     }
 
-    // 【修正】v5 核心文字提取 - 引入段落緩衝、多語言智能合併 (保持上一輪的優化)
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -781,7 +810,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 standardFontDataUrl: standardFontDataUrl
             });
 
-            // 密碼處理
             loadingTask.onPassword = function (updatePassword, reason) {
                 playAudioCue('error');
                 if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
@@ -800,7 +828,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             let fullText = "";
             const maxPages = pdf.numPages;
             
-            // 定義嚴格 CJK 字符範圍 (中日韓文字 + 全形標點)
             const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
 
             for (let i = 1; i <= maxPages; i++) {
@@ -809,7 +836,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 
-                // --- 步驟 1: Line Buffer (基於 Y 軸分行) ---
                 let lines = [];
                 let currentLine = [];
                 
@@ -830,7 +856,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 }
                 if (currentLine.length > 0) lines.push(currentLine);
 
-                // --- 步驟 2: 行內排序與間距處理 (Gap Threshold 0.4) ---
                 let processedLines = [];
                 
                 for (const line of lines) {
@@ -846,7 +871,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                         const w = item.width;
                         const fontSize = item.transform[0] || 10;
 
-                        // Gap Threshold 調整為 0.4
                         if (lastItemXEnd !== null) {
                             const gap = x - lastItemXEnd;
                             if (gap > (fontSize * 0.4)) { 
@@ -864,7 +888,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                     processedLines.push(lineText.trim());
                 }
 
-                // --- 步驟 3: 段落重組 (Paragraph Reconstruction) ---
                 let pageParagraphs = "";
                 
                 for (let j = 0; j < processedLines.length; j++) {
@@ -1108,7 +1131,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             url=`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`; delete headers['Authorization'];
             let parts = [];
             if (isMultiImage) {
-                // Gemini 原生支援多圖 (僅保留給 text mode 的少數情況，主邏輯已移至 performAIProcessing 的 Promise.all)
+                // Gemini 原生支援多圖
                 file.forEach(b64 => parts.push({inline_data:{mime_type:"image/jpeg", data:b64}}));
                 parts.push({text:txt});
             } else {
