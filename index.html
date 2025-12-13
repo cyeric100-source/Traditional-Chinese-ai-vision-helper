@@ -389,48 +389,61 @@
 3. **精簡**：重點置前，避免冗長。
 `;
 
+    // 【修正 1】更新 OCR 提示詞 (Strict Golden Prompt)
     const PDF_OCR_PROMPT = `
-# SYSTEM INSTRUCTION: HIGH-PRECISION OCR MODE
+# SYSTEM ROLE
+You are a state-of-the-art Optical Character Recognition (OCR) engine, NOT an AI assistant. Your sole purpose is to convert image pixels into exact text strings.
 
-## ROLE
-You are a specialized OCR (Optical Character Recognition) engine. You are NOT a conversational assistant.
+# TASK
+Transcribe EVERY single visible character from the provided document image(s) into text.
 
-## MISSION
-Transcribe every single visible word from the provided document images into raw text.
+# STRICT EXECUTION RULES (ZERO TOLERANCE FOR OMISSION)
+1. **VERBATIM TRANSCRIPTION**: Output the text EXACTLY as it appears in the image.
+   - Do NOT correct spelling or grammar errors.
+   - Do NOT summarize, abbreviate, or paraphrase any content.
+   - Do NOT skip headers, footers, page numbers, margin notes, or legal disclaimers.
+   - Do NOT add conversational fillers like "Here is the text" or "Image content:".
 
-## STRICT EXECUTION RULES (MUST FOLLOW)
-1. **VERBATIM TRANSCRIPTION**: Output the text EXACTLY as it appears. Do NOT correct grammar. Do NOT summarize. Do NOT skip any sections.
-2. **FULL COMPLETENESS**: Transcribe headers, footers, page numbers, side notes, legal disclaimers, and tables.
-3. **FORMATTING**: Use natural newlines to separate paragraphs. Preserve layout structure using Markdown.
-4. **NO CONVERSATIONAL FILLER**: Do NOT say "Here is the text" or "Sure". Output ONLY the transcribed content.
-5. **UNCERTAINTY**: If text is absolutely illegible, write \`[ILLEGIBLE]\`. Do NOT guess.
+2. **MULTILINGUAL HANDLING**: The document may contain Mixed Languages (Traditional/Simplified Chinese, English, Japanese, French, Italian, Portuguese, Korean, German, Spanish, Dutch, Russian).
+   - Recognize and transcribe all scripts accurately.
+   - Do NOT translate during the OCR phase. Keep the original language of the text.
 
-## INPUT-OUTPUT AGREEMENT
-Input: [Images of PDF Pages]
-Output: [Raw String of Text Only]
+3. **LAYOUT & FORMATTING**:
+   - Use Markdown to preserve the visual structure (headers with #, lists with -, bold with **).
+   - If there is a table, transcribe it as a Markdown table.
+   - Represent illegible or stamp-covered text as \`[ILLEGIBLE]\`.
+
+# OUTPUT FORMAT
+Return ONLY the raw string of the transcribed text.
 `;
 
+    // 【修正 2】更新翻譯提示詞 (Complete Golden Prompt)
     const PDF_TRANSLATE_PROMPT = `
-# SYSTEM INSTRUCTION: PROFESSIONAL DOCUMENT TRANSLATION
+# SYSTEM ROLE
+You are a professional textual translator specializing in localization for Traditional Chinese (Hong Kong/Taiwan usage). You are NOT a summarizer.
 
-## ROLE
-You are a professional document translator specializing in Traditional Chinese (Hong Kong usage).
+# TASK
+Translate the provided source content FULLY and ACCURATELY into fluent, natural Traditional Chinese (繁體中文).
 
-## MISSION
-Translate the provided source content FULLY and ACCURATELY into Traditional Chinese.
+# STRICT TRANSLATION PROTOCOLS
+1. **100% COMPLETENESS**: 
+   - Translate every single sentence, clause, number, and punctuation mark.
+   - Do NOT summarize, condense, or omit any paragraph, no matter how repetitive it seems.
+   - Preserve all headers, footers, and page numbers in the translation.
 
-## STRICT EXECUTION RULES (MUST FOLLOW)
-1. **100% COMPLETENESS**: Translate every single sentence, header, footer, page number, and number. Do NOT summarize. Do NOT omit any paragraph.
-2. **ACCURACY**: Preserve the original meaning, tone, and legal implications.
-3. **STRUCTURE**: Maintain the original paragraph structure and layout logic.
-4. **OUTPUT FORMAT**: Output ONLY the translated text. Do NOT include the original text unless explicitly asked. Do NOT add conversational filler like "Here is the translation".
+2. **TONE & STYLE**:
+   - Convert foreign idioms into natural Hong Kong/Taiwanese expressions (e.g., "bus" -> "巴士/公車", "software" -> "軟件/軟體").
+   - Maintain the formality of the original document (e.g., Legal, Medical, or Casual).
 
-## INPUT-OUTPUT AGREEMENT
-Input: [Source Text/Document Images]
-Output: [Translated Text in Traditional Chinese (HK)]
+3. **FORMATTING PRESERVATION**:
+   - Keep the original Markdown structure (paragraphs, lists, tables) exactly as provided.
+   - Do NOT output the original English/Source text unless explicitly asked. Output ONLY the translated result.
+
+# OUTPUT REQUIREMENT
+Output purely the translated text. Do not add introductions like "Here is the translation".
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v18_final_cjk";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v19_final_vision";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -581,6 +594,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
             if (alwaysAI) {
                 updateStatusBar("正在將 PDF 轉為圖片以進行 AI 完整辨識...", "busy");
                 const images = await convertPdfToImages(file);
+                // 【注意】這裡 images 是圖片陣列，會觸發 performAIProcessing 的並行處理邏輯
                 await performAIProcessing(images, forceTranslate ? "translate_only" : "ocr_strict", null);
                 return;
             }
@@ -674,6 +688,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
 
         const isImageArray = Array.isArray(inputData);
 
+        // API Key 檢查邏輯
         if (isImageArray) {
             targetProvider = 'gemini';
             const storedGeminiKey = localStorage.getItem('gemini_key');
@@ -697,21 +712,48 @@ Output: [Translated Text in Traditional Chinese (HK)]
         let systemPrompt = mode === "ocr_strict" ? PDF_OCR_PROMPT : (mode === "translate_only" || mode === "translate_text" ? PDF_TRANSLATE_PROMPT : DEFAULT_PROMPT);
         const controller = new AbortController(); 
         
-        let userText = "";
-        if (mode === "translate_text") userText = `[SOURCE TEXT TO TRANSLATE]:\n${textData}`;
-        else if (isImageArray) userText = "Please process these document images according to the strict system rules.";
-        else userText = "Please process this request.";
-
-        let filePayload = isImageArray ? inputData : null; 
-        let mimeType = isImageArray ? "image/jpeg" : null;
-
         const originalPromptVal = document.getElementById('system-prompt').value;
         document.getElementById('system-prompt').value = systemPrompt; 
 
         try {
             chatHistory = []; 
-            const response = await callAI(targetProvider, userText, filePayload, mimeType, controller.signal, targetModel, targetApiKey);
-            addMessage('assistant', response); playAudioCue('success'); updateStatusBar("處理完成", "ready");
+            
+            // 【修正 3】分頁並行請求 + 程式碼注入標題 (Parallel + Programmatic Header Injection)
+            if (isImageArray) {
+                updateStatusBar(`正在並行處理 ${inputData.length} 頁文件 (Gemini Vision)...`, "busy");
+                
+                // 定義單頁的使用者指令 (確保 AI 專注於單頁)
+                const singlePageUserPrompt = mode === "ocr_strict" 
+                    ? "Transcribe this page exactly." 
+                    : "Translate this page exactly into Traditional Chinese.";
+
+                // 使用 Promise.all 發送所有並行請求
+                const promises = inputData.map(async (imgBase64, index) => {
+                    const pageNum = index + 1;
+                    try {
+                        // 呼叫 AI 處理單一圖片 (注意：這裡傳入的是單一字串，非陣列)
+                        const res = await callAI(targetProvider, singlePageUserPrompt, imgBase64, "image/jpeg", controller.signal, targetModel, targetApiKey);
+                        
+                        // 【關鍵】由程式碼注入標題，而非依賴 AI
+                        return `## [第 ${pageNum} 頁]\n${res}`;
+                    } catch (err) {
+                        return `## [第 ${pageNum} 頁]\n(此頁處理失敗: ${err.message})`;
+                    }
+                });
+
+                // 等待所有頁面處理完成
+                const results = await Promise.all(promises);
+                const fullResponse = results.join("\n\n");
+                
+                addMessage('assistant', fullResponse);
+            } else {
+                // 原有文字處理邏輯 (Text Mode)
+                let userText = mode === "translate_text" ? `[SOURCE TEXT TO TRANSLATE]:\n${textData}` : "Please process this request.";
+                const response = await callAI(targetProvider, userText, null, null, controller.signal, targetModel, targetApiKey);
+                addMessage('assistant', response);
+            }
+
+            playAudioCue('success'); updateStatusBar("處理完成", "ready");
             document.getElementById('chat-output').lastChild.focus();
         } catch (e) {
             if (e.message.includes("Failed to fetch") && targetProvider === 'gemini') {
@@ -724,7 +766,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
         }
     }
 
-    // 【修改】v5 核心文字提取 - 引入段落緩衝、多語言智能合併 (A.1, A.2, A.3)
+    // 【修正】v5 核心文字提取 - 引入段落緩衝、多語言智能合併 (保持上一輪的優化)
     async function extractTextFromPDF(file, reportProgress = false) {
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -759,7 +801,6 @@ Output: [Translated Text in Traditional Chinese (HK)]
             const maxPages = pdf.numPages;
             
             // 定義嚴格 CJK 字符範圍 (中日韓文字 + 全形標點)
-            // 排除俄文、希臘文、西文符號，這些都視為需要空格的 Word-Based 語言
             const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
 
             for (let i = 1; i <= maxPages; i++) {
@@ -805,12 +846,11 @@ Output: [Translated Text in Traditional Chinese (HK)]
                         const w = item.width;
                         const fontSize = item.transform[0] || 10;
 
-                        // 【修正 A.2】Gap Threshold 調整為 0.4 (避免 Justified 排版產生多餘空格)
+                        // Gap Threshold 調整為 0.4
                         if (lastItemXEnd !== null) {
                             const gap = x - lastItemXEnd;
                             if (gap > (fontSize * 0.4)) { 
                                 const currChar = str.charAt(0);
-                                // 【修正 A.1】僅當前後都不是 CJK 時才加空格 (俄文/西文自動包含)
                                 if (!(isCJK(lastChar) && isCJK(currChar))) {
                                     lineText += " ";
                                 }
@@ -835,37 +875,27 @@ Output: [Translated Text in Traditional Chinese (HK)]
                         const lastChar = currLine.slice(-1);
                         const nextChar = nextLine.charAt(0);
                         
-                        // 檢查句尾符號 (中西文)
                         const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
 
                         if (isSentenceEnd) {
-                            // 真換行 (段落結束)
                             pageParagraphs += currLine + "\n";
                         } else {
-                            // 假換行 (句子未完) -> 合併
-                            
-                            // 情況 1: 英文斷詞 (Hyphenation) e.g., "com-" + "puter"
                             if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) {
-                                // 去除連字號並無縫合併
                                 pageParagraphs += currLine.slice(0, -1); 
                             } 
-                            // 情況 2: CJK 接 CJK -> 無縫合併
                             else if (isCJK(lastChar) && isCJK(nextChar)) {
                                 pageParagraphs += currLine;
                             } 
-                            // 情況 3: 其他 (英+英, 英+中, 俄+俄) -> 補空格合併
                             else {
                                 pageParagraphs += currLine + " ";
                             }
                         }
                     } else {
-                        // 最後一行
                         pageParagraphs += currLine + "\n";
                     }
                 }
 
                 if (pageParagraphs.trim().length > 0) {
-                    // 【修正 B】無障礙標題標記 ##
                     fullText += `## [第 ${i} 頁]\n${pageParagraphs}\n\n`;
                 }
             }
@@ -1078,7 +1108,7 @@ Output: [Translated Text in Traditional Chinese (HK)]
             url=`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`; delete headers['Authorization'];
             let parts = [];
             if (isMultiImage) {
-                // Gemini 原生支援多圖
+                // Gemini 原生支援多圖 (僅保留給 text mode 的少數情況，主邏輯已移至 performAIProcessing 的 Promise.all)
                 file.forEach(b64 => parts.push({inline_data:{mime_type:"image/jpeg", data:b64}}));
                 parts.push({text:txt});
             } else {
