@@ -443,7 +443,7 @@ Translate the provided source content FULLY and ACCURATELY into fluent, natural 
 Output purely the translated text. Do not add introductions like "Here is the translation".
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v21_final_ai_reconstruct";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v22_final_sleep3000";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -470,7 +470,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     function smartMergeLines(rawText) {
         if (!rawText) return "";
         
-        // 1. 將 AI 回傳的全文拆分成行
         const lines = rawText.split(/\r?\n/);
         let processedText = "";
         
@@ -479,7 +478,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         for (let i = 0; i < lines.length; i++) {
             let currLine = lines[i].trim();
             
-            // 跳過空行 (但保留段落間隔)
             if (currLine.length === 0) {
                 processedText += "\n\n"; 
                 continue;
@@ -488,7 +486,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             if (i < lines.length - 1) {
                 let nextLine = lines[i + 1].trim();
                 
-                // 如果下一行是空行，則當前行必然是段落結尾
                 if (nextLine.length === 0) {
                     processedText += currLine + "\n";
                     continue;
@@ -497,34 +494,24 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 const lastChar = currLine.slice(-1);
                 const nextChar = nextLine.charAt(0);
                 
-                // 檢查句尾標點符號
                 const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
-                
-                // 保護 Markdown 標題 (#) 與列表符號 (- *)，避免被錯誤合併
                 const isHeaderOrList = /^#/.test(currLine) || /^[-*] /.test(currLine) || /^#/.test(nextLine) || /^[-*] /.test(nextLine);
 
                 if (isSentenceEnd || isHeaderOrList) {
                     processedText += currLine + "\n";
                 } else {
-                    // --- 智能合併邏輯 ---
                     if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) {
-                        // 英文斷詞修復: "com-" + "puter" -> "computer"
                         processedText += currLine.slice(0, -1);
                     } else if (isCJK(lastChar) && isCJK(nextChar)) {
-                        // 中文接中文 -> 無縫合併
                         processedText += currLine;
                     } else {
-                        // 其他 (英+英, 英+中) -> 補空格合併
                         processedText += currLine + " ";
                     }
                 }
             } else {
-                // 最後一行
                 processedText += currLine + "\n";
             }
         }
-        
-        // 清理多餘換行，保持 Markdown 規範
         return processedText.replace(/\n{3,}/g, "\n\n").trim();
     }
 
@@ -798,7 +785,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                             // 呼叫 AI
                             let res = await callAI(targetProvider, singlePageUserPrompt, imgBase64, "image/jpeg", controller.signal, targetModel, targetApiKey);
                             
-                            // 【關鍵修正】應用智能後處理邏輯 (Post-Process)
+                            // 應用智能後處理邏輯
                             res = smartMergeLines(res);
 
                             // 注入標題
@@ -808,7 +795,8 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
                             if (i < inputData.length - 1) {
                                 updateStatusBar(`第 ${pageNum} 頁完成，冷卻中 (避免觸發限制)...`, "busy");
-                                await sleep(2000); 
+                                // 【核心修正】延長至 3 秒
+                                await sleep(3000); 
                             }
 
                         } catch (err) {
