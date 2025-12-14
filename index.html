@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025 系統指令自訂版)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025 全文翻譯版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
@@ -267,7 +267,7 @@
 <div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中 (請稍候)...</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 自訂指令版)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 全文翻譯版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -346,7 +346,7 @@
             <label for="timeout-setting">回應逾時 (秒):</label>
             <input type="number" id="timeout-setting" value="120" min="5" step="5">
 
-            <!-- 【核心修正】系統指令編輯器 (Tab 介面) -->
+            <!-- 系統指令編輯器 (Tab 介面) -->
             <label style="margin-top: 15px; display:block; font-weight:bold;">系統指令 (System Prompts):</label>
             <div class="prompt-tabs">
                 <button type="button" id="tab-chat" class="active" onclick="switchPromptEditor('chat')">編輯: 一般對話指令</button>
@@ -473,7 +473,6 @@
 3. **精簡**：重點置前，避免冗長。
 `;
 
-    // OCR 黃金指令 (Strict)
     const DEFAULT_OCR_PROMPT = `
 # SYSTEM ROLE
 You are a state-of-the-art Optical Character Recognition (OCR) engine, NOT an AI assistant. Your sole purpose is to convert image pixels into exact text strings.
@@ -501,7 +500,6 @@ Transcribe EVERY single visible character from the provided document image(s) in
 Return ONLY the raw string of the transcribed text.
 `;
 
-    // 翻譯黃金指令 (Complete)
     const DEFAULT_TRANSLATE_PROMPT = `
 # SYSTEM ROLE
 You are a professional textual translator specializing in localization for Traditional Chinese (Hong Kong/Taiwan usage). You are NOT a summarizer.
@@ -527,7 +525,7 @@ Translate the provided source content FULLY and ACCURATELY into fluent, natural 
 Output purely the translated text. Do not add introductions like "Here is the translation".
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v25_custom_prompts";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v26_fullcontext";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -547,19 +545,10 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     let audioContext = null;
     let allCurrentModels = [];
     let isVoiceRecording = false;
-
-    // 任務專用設定物件
     let specificConfigs = { ocr: null, translate: null };
+    let memoryPrompts = { chat: "", ocr: "", translate: "" };
+    let currentEditingMode = 'chat'; 
 
-    // 【新增】系統指令暫存區 (Runtime Memory)
-    let memoryPrompts = {
-        chat: "",
-        ocr: "",
-        translate: ""
-    };
-    let currentEditingMode = 'chat'; // 'chat' | 'ocr' | 'translate'
-
-    // 輔助函式：Sleep
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     function smartMergeLines(rawText) {
@@ -671,17 +660,14 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             const savedEnter = localStorage.getItem('enter_to_send');
             document.getElementById('enter-to-send').checked = (savedEnter === null || savedEnter === 'true');
 
-            // 載入任務專用設定
             const savedSpecifics = localStorage.getItem('specific_configs');
             if (savedSpecifics) {
                 specificConfigs = JSON.parse(savedSpecifics);
             }
             updateConfigStatusDisplay();
 
-            // 載入全域 OCR 與 Translate 指令 (若無則使用預設值)
             memoryPrompts.ocr = localStorage.getItem('custom_prompt_ocr') || DEFAULT_OCR_PROMPT;
             memoryPrompts.translate = localStorage.getItem('custom_prompt_translate') || DEFAULT_TRANSLATE_PROMPT;
-            // memoryPrompts.chat 會在 handleProviderChange 時載入
 
             if (savedProvider && PROVIDERS[savedProvider]) {
                 document.getElementById('provider-select').value = savedProvider;
@@ -703,19 +689,11 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         }
     });
 
-    // 【新增】系統指令切換與編輯邏輯
     function switchPromptEditor(mode) {
-        // 1. 保存當前正在編輯的內容到暫存變數
         const textarea = document.getElementById('system-prompt');
         memoryPrompts[currentEditingMode] = textarea.value;
-
-        // 2. 切換模式
         currentEditingMode = mode;
-
-        // 3. 載入新模式的內容
         textarea.value = memoryPrompts[mode];
-
-        // 4. 更新 Tab 樣式
         document.getElementById('tab-chat').classList.toggle('active', mode === 'chat');
         document.getElementById('tab-ocr').classList.toggle('active', mode === 'ocr');
         document.getElementById('tab-translate').classList.toggle('active', mode === 'translate');
@@ -825,6 +803,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             if (alwaysAI) {
                 updateStatusBar("正在將 PDF 轉為圖片以進行 AI 完整辨識...", "busy");
                 const images = await convertPdfToImages(file);
+                // 【核心修改】傳入模式，讓 performAIProcessing 決定是否需要「先OCR再翻譯」
                 await performAIProcessing(images, forceTranslate ? "translate_only" : "ocr_strict", null);
                 return;
             }
@@ -909,111 +888,110 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         return images;
     }
 
+    // 【核心修正】performAIProcessing 重構為兩階段：OCR (Accumulate) -> Translate
     async function performAIProcessing(inputData, mode, textData) {
-        let targetProvider = document.getElementById('provider-select').value;
-        let targetModel = currentActiveModelId;
-        
-        let configOverride = null;
-        if (mode === "ocr_strict" && specificConfigs.ocr) {
-            configOverride = specificConfigs.ocr;
-        } else if ((mode === "translate_only" || mode === "translate_text") && specificConfigs.translate) {
-            configOverride = specificConfigs.translate;
-        }
-
-        if (configOverride) {
-            targetProvider = configOverride.provider;
-            targetModel = configOverride.model;
-            console.log(`Using specific config for ${mode}:`, configOverride);
-        }
-
-        let targetApiKey = "";
-        
-        if (targetProvider === document.getElementById('provider-select').value) {
-            targetApiKey = document.getElementById('api-key').value;
-        } else {
-            targetApiKey = localStorage.getItem(`${targetProvider}_key`);
-        }
-
-        const isImageArray = Array.isArray(inputData);
-        if (isImageArray && !targetApiKey) {
-             if (!targetApiKey) throw new Error(`請先在設定中輸入 ${targetProvider} 的 API Key 才能進行任務。`);
-        }
-        if (!targetApiKey) throw new Error(`找不到 ${targetProvider} 的 API Key，請先設定。`);
-        
-        // 【核心修正】讀取正確的系統指令
-        // 若 mode 是 OCR，使用 memoryPrompts.ocr (使用者自訂過的)
-        // 若 mode 是 Translate，使用 memoryPrompts.translate
-        // 否則使用 Chat 指令 (memoryPrompts.chat，此變數在 handleProviderChange 載入)
-        let systemPrompt = "";
-        if (mode === "ocr_strict") {
-            systemPrompt = memoryPrompts.ocr;
-        } else if (mode === "translate_only" || mode === "translate_text") {
-            systemPrompt = memoryPrompts.translate;
-        } else {
-            // 對於 general chat，我們使用目前 UI 上的指令 (通常就是 memoryPrompts.chat)
-            systemPrompt = memoryPrompts.chat;
-        }
-
         const controller = new AbortController(); 
+        chatHistory = []; 
+        const isImageArray = Array.isArray(inputData);
+        
+        // --- 變數準備 ---
+        let accumulatedText = "";
+        
+        // --- 階段一：文本獲取 (若為圖片則 OCR，若為文字則直接使用) ---
+        if (isImageArray) {
+            // 強制使用 OCR 模式進行識別
+            const ocrMode = "ocr_strict";
+            const ocrSystemPrompt = memoryPrompts.ocr;
+            
+            // 決定 OCR 的 Provider & Key & Model
+            let ocrProvider = document.getElementById('provider-select').value;
+            let ocrModel = currentActiveModelId;
+            if (specificConfigs.ocr) {
+                ocrProvider = specificConfigs.ocr.provider;
+                ocrModel = specificConfigs.ocr.model;
+            }
+            let ocrApiKey = (ocrProvider === document.getElementById('provider-select').value) 
+                            ? document.getElementById('api-key').value 
+                            : localStorage.getItem(`${ocrProvider}_key`);
 
-        try {
-            chatHistory = []; 
-            if (isImageArray) {
-                updateStatusBar(`正在處理 ${inputData.length} 頁文件 (序列化處理以確保完整性)...`, "busy");
-                const singlePageUserPrompt = mode === "ocr_strict" ? "Transcribe this page exactly." : "Translate this page exactly into Traditional Chinese.";
-                let fullResponse = "";
+            if (!ocrApiKey) throw new Error(`找不到 ${ocrProvider} (OCR用) 的 API Key。`);
 
-                for (let i = 0; i < inputData.length; i++) {
-                    const imgBase64 = inputData[i];
-                    const pageNum = i + 1;
-                    let success = false;
-                    let retryCount = 0;
-                    const maxRetries = 3;
+            updateStatusBar(`階段 1/2: 正在 OCR ${inputData.length} 頁文件...`, "busy");
+            const singlePagePrompt = "Transcribe this page exactly.";
 
-                    while (!success && retryCount < maxRetries) {
-                        try {
-                            updateStatusBar(`[${targetProvider}] 正在處理第 ${pageNum}/${inputData.length} 頁${retryCount>0?` (重試 ${retryCount})`:''} ...`, "busy");
-                            // 傳入 systemPrompt (第三個參數不傳 file，傳 imgBase64 作為第四個)
-                            let res = await callAI(targetProvider, singlePageUserPrompt, imgBase64, "image/jpeg", controller.signal, targetModel, targetApiKey, systemPrompt);
-                            res = smartMergeLines(res);
-                            const pageContent = `## [第 ${pageNum} 頁]\n${res}\n\n`;
-                            fullResponse += pageContent;
-                            success = true;
-                            if (i < inputData.length - 1) {
-                                updateStatusBar(`第 ${pageNum} 頁完成，冷卻中 (避免觸發限制)...`, "busy");
-                                await sleep(3000); 
-                            }
-                        } catch (err) {
-                            if (err.message.includes("429") || err.message.includes("quota") || err.message.includes("RESOURCE_EXHAUSTED")) {
-                                const waitTime = 30; 
-                                updateStatusBar(`流量限制 (429)，將在 ${waitTime} 秒後自動重試第 ${pageNum} 頁...`, "busy");
-                                await sleep(waitTime * 1000);
-                                retryCount++;
-                            } else {
-                                console.error(err);
-                                fullResponse += `## [第 ${pageNum} 頁]\n(處理失敗: ${err.message})\n\n`;
-                                success = true; 
-                            }
+            for (let i = 0; i < inputData.length; i++) {
+                const imgBase64 = inputData[i];
+                const pageNum = i + 1;
+                let success = false;
+                let retryCount = 0;
+
+                while (!success && retryCount < 3) {
+                    try {
+                        updateStatusBar(`[OCR ${ocrProvider}] 處理中: 第 ${pageNum}/${inputData.length} 頁${retryCount>0?` (重試 ${retryCount})`:''} ...`, "busy");
+                        let res = await callAI(ocrProvider, singlePagePrompt, imgBase64, "image/jpeg", controller.signal, ocrModel, ocrApiKey, ocrSystemPrompt);
+                        res = smartMergeLines(res);
+                        const pageContent = `## [第 ${pageNum} 頁]\n${res}\n\n`;
+                        accumulatedText += pageContent;
+                        success = true;
+                        if (i < inputData.length - 1) await sleep(2000); // 避免速率限制
+                    } catch (err) {
+                        if (err.message.includes("429")) {
+                            updateStatusBar(`流量限制，30秒後重試...`, "busy");
+                            await sleep(30000);
+                            retryCount++;
+                        } else {
+                            accumulatedText += `## [第 ${pageNum} 頁]\n(處理失敗: ${err.message})\n\n`;
+                            success = true; 
                         }
                     }
-                    if (!success) { fullResponse += `## [第 ${pageNum} 頁]\n(重試多次後仍失敗)\n\n`; }
                 }
-                addMessage('assistant', fullResponse);
-            } else {
-                let userText = mode === "translate_text" ? `[SOURCE TEXT TO TRANSLATE]:\n${textData}` : "Please process this request.";
-                const response = await callAI(targetProvider, userText, null, null, controller.signal, targetModel, targetApiKey, systemPrompt);
-                addMessage('assistant', response);
             }
+        } else {
+            // 若原本就是文字模式，直接使用
+            accumulatedText = textData;
+        }
 
-            playAudioCue('success'); updateStatusBar("處理完成", "ready");
-            document.getElementById('chat-output').lastChild.focus();
-        } catch (e) {
-            if (e.message.includes("Failed to fetch") && targetProvider === 'gemini') {
-                throw new Error("Google 拒絕瀏覽器直接連線 (CORS 錯誤)。\n請改用 'OpenRouter' 服務商 (它支援 Gemini 模型且允許瀏覽器連線)。");
-            } else {
+        // --- 階段二：根據結果決定 輸出 或 翻譯 ---
+        // 判斷是否需要翻譯 (mode 包含 translate)
+        if (mode === "translate_only" || mode === "translate_text") {
+            const transMode = "translate_text";
+            const transSystemPrompt = memoryPrompts.translate;
+
+            // 決定 Translate 的 Provider & Key & Model
+            let transProvider = document.getElementById('provider-select').value;
+            let transModel = currentActiveModelId;
+            if (specificConfigs.translate) {
+                transProvider = specificConfigs.translate.provider;
+                transModel = specificConfigs.translate.model;
+            }
+            let transApiKey = (transProvider === document.getElementById('provider-select').value)
+                              ? document.getElementById('api-key').value
+                              : localStorage.getItem(`${transProvider}_key`);
+
+            if (!transApiKey) throw new Error(`找不到 ${transProvider} (翻譯用) 的 API Key。`);
+
+            updateStatusBar(`階段 2/2: [${transProvider}] 正在根據全文進行翻譯...`, "busy");
+            const userTransPrompt = `[SOURCE TEXT TO TRANSLATE]:\n${accumulatedText}`;
+            
+            try {
+                const finalRes = await callAI(transProvider, userTransPrompt, null, null, controller.signal, transModel, transApiKey, transSystemPrompt);
+                addMessage('assistant', finalRes);
+            } catch (e) {
+                if (e.message.includes("Failed to fetch") && transProvider === 'gemini') {
+                    throw new Error("CORS 錯誤: Google 拒絕連線，請改用 OpenRouter。");
+                }
                 throw e;
             }
-        } 
+
+        } else {
+            // 不需要翻譯，直接輸出 OCR 結果
+            updateStatusBar("處理完成", "ready");
+            addMessage('assistant', accumulatedText);
+        }
+
+        playAudioCue('success'); updateStatusBar("任務完成", "ready");
+        document.getElementById('chat-output').lastChild.focus();
+        document.getElementById('system-prompt').value = memoryPrompts[currentEditingMode]; // 恢復 UI 顯示
     }
 
     async function extractTextFromPDF(file, reportProgress = false) {
@@ -1260,15 +1238,12 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     }
     function toggleExportButtons(show) { ['copy-btn','export-txt-btn','export-html-btn'].forEach(id=>document.getElementById(id).classList.toggle('hidden', !show)); }
     
-    // 【核心修正】Provider 切換時，只載入 Chat Prompt，不影響全域 OCR/Translate Prompt
     function handleProviderChange(save=true) {
         const p = document.getElementById('provider-select').value; const c = PROVIDERS[p];
         document.getElementById('api-key').value = localStorage.getItem(`${p}_key`) || "";
         
-        // 載入該 Provider 的 Chat Prompt
         memoryPrompts.chat = localStorage.getItem(`${p}_prompt`) || c.prompt;
         
-        // 若目前編輯器停留在 chat 模式，更新介面
         if (currentEditingMode === 'chat') {
             document.getElementById('system-prompt').value = memoryPrompts.chat;
         }
@@ -1313,18 +1288,14 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     }
     function handleCustomInputChange() { currentActiveModelId = document.getElementById('custom-model-input').value.trim(); resetConversation(); }
     
-    // 【核心修正】儲存設定：保存所有指令 (Chat, OCR, Translate)
     function saveSettings() {
         const p = document.getElementById('provider-select').value;
         const m = document.getElementById('model-select').value==="CUSTOM" ? document.getElementById('custom-model-input').value : document.getElementById('model-select').value;
         
-        // 1. 先將文字框內容同步回當前模式的記憶體
         memoryPrompts[currentEditingMode] = document.getElementById('system-prompt').value;
 
-        // 2. 儲存一般對話指令 (與 Provider 綁定)
         localStorage.setItem(`${p}_prompt`, memoryPrompts.chat);
         
-        // 3. 儲存 OCR 與 Translate 指令 (全域)
         localStorage.setItem('custom_prompt_ocr', memoryPrompts.ocr);
         localStorage.setItem('custom_prompt_translate', memoryPrompts.translate);
 
@@ -1339,17 +1310,14 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     function restoreDefaults() {
         const p = document.getElementById('provider-select').value; 
         
-        // 恢復記憶體中的預設值
         memoryPrompts.chat = PROVIDERS[p].prompt;
         memoryPrompts.ocr = DEFAULT_OCR_PROMPT;
         memoryPrompts.translate = DEFAULT_TRANSLATE_PROMPT;
 
-        // 清除 Storage 中的自訂值
         localStorage.removeItem(`${p}_prompt`);
         localStorage.removeItem('custom_prompt_ocr');
         localStorage.removeItem('custom_prompt_translate');
 
-        // 更新介面
         document.getElementById('system-prompt').value = memoryPrompts[currentEditingMode];
         
         localStorage.removeItem(`${p}_model`); 
@@ -1392,7 +1360,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             if (mime === "application/pdf-images") {
                 await performAIProcessing(fileData, "ocr_strict", null);
             } else {
-                // 一般對話：傳入 memoryPrompts.chat (若用戶正在編輯其他 Tab，這裡也能保證取到正確的 chat 指令)
                 const res = await callAI(document.getElementById('provider-select').value, input, skipFile?null:fileData, mime, ctl.signal, null, null, memoryPrompts.chat);
                 document.getElementById('user-input').value=""; document.getElementById('upload-btn').innerText="選擇檔案 (Alt+Shift+U)"; selectedFile=null;
                 addMessage('user', txt||"[檔案]"); const ai = addMessage('assistant', res); ai.focus(); chatHistory.push({role:'user',content:input}); chatHistory.push({role:'assistant',content:res});
@@ -1404,7 +1371,6 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     async function callAI(p, txt, file, mime, sig, ovModel, ovKey, ovSystemPrompt) {
         const k = ovKey || document.getElementById('api-key').value; 
         const m = ovModel || currentActiveModelId;
-        // 【核心修正】優先使用傳入的 System Prompt，若無則降級使用 UI 上的
         const sys = ovSystemPrompt || document.getElementById('system-prompt').value; 
         
         if(!k) throw new Error("需 API Key");
