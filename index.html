@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025 全文翻譯版)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025 修正版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
@@ -11,30 +11,48 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 【核心】PDF.js v5.4.449 : CDN 優先 + Blob Fallback 雙重載入機制 -->
+    <!-- 【核心】PDF.js v5.4.449 : 雙重 CDN 備援載入機制 -->
     <script type="module">
-        import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.min.mjs';
-        
-        window.pdfjsLib = pdfjsLib;
-        
-        // 定義 Worker URL
-        const WORKER_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs';
+        // 定義主 CDN 與備用 CDN (保留具體版本號)
+        const PDF_URLS = [
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.min.mjs',
+            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.min.mjs'
+        ];
+        const WORKER_URLS = [
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs',
+            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs'
+        ];
 
-        // 初始化 Worker (Blob 優先策略)
-        (async function initPdfWorker() {
-            try {
-                const response = await fetch(WORKER_URL);
-                if (!response.ok) throw new Error("Worker fetch failed");
-                const workerScript = await response.text();
-                const blob = new Blob([workerScript], { type: "application/javascript" });
-                pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-                console.log("PDF Worker loaded via Blob (Safe Mode).");
-            } catch (e) {
-                console.warn("Blob load failed, falling back to direct CDN URL.", e);
-                pdfjsLib.GlobalWorkerOptions.workerSrc = WORKER_URL;
+        async function loadPdfLib() {
+            for (let i = 0; i < PDF_URLS.length; i++) {
+                try {
+                    const lib = await import(PDF_URLS[i]);
+                    window.pdfjsLib = lib;
+                    
+                    // 設定 Worker (Blob 優先策略)
+                    const workerUrl = WORKER_URLS[i];
+                    try {
+                        const response = await fetch(workerUrl);
+                        if (!response.ok) throw new Error("Worker fetch failed");
+                        const workerScript = await response.text();
+                        const blob = new Blob([workerScript], { type: "application/javascript" });
+                        lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                        console.log(`PDF Lib loaded from ${PDF_URLS[i]} (Blob Worker)`);
+                    } catch (e) {
+                        console.warn("Blob load failed, using direct URL.", e);
+                        lib.GlobalWorkerOptions.workerSrc = workerUrl;
+                    }
+                    
+                    window.dispatchEvent(new Event('pdfjs-loaded'));
+                    return; // 成功載入則退出
+                } catch (e) {
+                    console.warn(`Failed to load PDF.js from ${PDF_URLS[i]}, trying backup...`, e);
+                }
             }
-            window.dispatchEvent(new Event('pdfjs-loaded'));
-        })();
+            alert("錯誤：無法載入 PDF 核心組件，請檢查網路連線。");
+        }
+
+        loadPdfLib();
     </script>
     
     <style>
@@ -233,14 +251,28 @@
         }
         #user-input.dragover { border-color: var(--accent-color) !important; background-color: #222; }
 
-        #status-bar {
+        /* 狀態列 */
+        #status-bar-container {
             position: fixed; top: 0; left: 0; right: 0;
+            z-index: 2000; display: flex; flex-direction: column;
+        }
+        
+        #status-bar {
             background: var(--status-bg); color: #fff;
             padding: 10px; text-align: center;
             font-weight: bold; font-size: 1.1rem;
-            z-index: 2000; border-bottom: 2px solid var(--border-color);
+            border-bottom: 2px solid var(--border-color);
             transition: background-color 0.3s;
         }
+        
+        /* 視覺進度條 (不透過語音朗讀) */
+        #visual-progress {
+            background: #333; color: #88ccff; font-size: 0.9rem; 
+            text-align: center; padding: 2px; border-bottom: 1px solid #444;
+            display: none; /* 預設隱藏 */
+        }
+        #visual-progress.active { display: block; }
+
         #status-bar.ready { background: #004400; border-bottom-color: #00ff00; }
         #status-bar.busy { background: #664400; border-bottom-color: #ffff00; }
         #status-bar.error { background: #660000; border-bottom-color: #ff0000; }
@@ -259,15 +291,20 @@
         .settings-subsection { border: 1px solid #444; padding: 10px; border-radius: 6px; margin: 10px 0; background: #222; }
         .settings-subsection h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: var(--accent-color); }
         .export-actions { margin-bottom: 20px; display: flex; gap: 10px; }
+        
+        .cors-notice { background: #442200; color: #ffcc88; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 0.95rem; border: 1px solid #ffaa00; }
     </style>
 </head>
 <body>
 
-<!-- 狀態列 -->
-<div id="status-bar" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">系統初始化中 (請稍候)...</div>
+<!-- 狀態列容器 -->
+<div id="status-bar-container">
+    <div id="status-bar" role="status" aria-live="polite" tabindex="-1">系統初始化中...</div>
+    <div id="visual-progress" aria-hidden="true"></div>
+</div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 全文翻譯版)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -276,13 +313,18 @@
         </summary>
         
         <div style="margin-top: 15px;">
+            <div class="cors-notice">
+                <strong>⚠️ 重要提示：</strong> OpenAI, Groq, Mistral 等服務商可能會封鎖瀏覽器直接連線 (CORS)。
+                <br>若遇到連線錯誤，請改用 <strong>OpenRouter</strong> (推薦) 或 Gemini。
+            </div>
+
             <label for="provider-select">主要 AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
-                <option value="gemini">Google Gemini (推薦)</option>
-                <option value="openrouter">OpenRouter (多模型 - 支援 CORS)</option>
+                <option value="gemini">Google Gemini (推薦 - 支援瀏覽器)</option>
+                <option value="openrouter">OpenRouter (萬用中轉 - 推薦解決 CORS)</option>
+                <option value="openai">OpenAI (需後端或 OpenRouter)</option>
+                <option value="groq">Groq (需後端或 OpenRouter)</option>
                 <option value="mistral">Mistral AI</option>
-                <option value="openai">OpenAI (GPT)</option>
-                <option value="groq">Groq</option>
                 <option value="perplexity">Perplexity</option>
             </select>
 
@@ -389,7 +431,7 @@
                 <!-- 控制項 C -->
                 <label class="check-btn">
                     <input type="checkbox" id="pdf-translate">
-                    <span>強制翻譯成繁體中文 (不刪減內容)</span>
+                    <span>翻譯成繁體中文 (OCR後翻譯)</span>
                 </label>
             </div>
         </div>
@@ -475,61 +517,36 @@
 
     const DEFAULT_OCR_PROMPT = `
 # SYSTEM ROLE
-You are a state-of-the-art Optical Character Recognition (OCR) engine, NOT an AI assistant. Your sole purpose is to convert image pixels into exact text strings.
+You are a state-of-the-art Optical Character Recognition (OCR) engine.
 
 # TASK
-Transcribe EVERY single visible character from the provided document image(s) into text.
+Transcribe EVERY single visible character from the image into text.
 
-# STRICT EXECUTION RULES (ZERO TOLERANCE FOR OMISSION)
-1. **VERBATIM TRANSCRIPTION**: Output the text EXACTLY as it appears in the image.
-   - Do NOT correct spelling or grammar errors.
-   - Do NOT summarize, abbreviate, or paraphrase any content.
-   - Do NOT skip headers, footers, page numbers, margin notes, or legal disclaimers.
-   - Do NOT add conversational fillers like "Here is the text" or "Image content:".
-
-2. **MULTILINGUAL HANDLING**: The document may contain Mixed Languages (Traditional/Simplified Chinese, English, Japanese, French, Italian, Portuguese, Korean, German, Spanish, Dutch, Russian).
-   - Recognize and transcribe all scripts accurately.
-   - Do NOT translate during the OCR phase. Keep the original language of the text.
-
-3. **LAYOUT & FORMATTING**:
-   - Use Markdown to preserve the visual structure (headers with #, lists with -, bold with **).
-   - If there is a table, transcribe it as a Markdown table.
-   - Represent illegible or stamp-covered text as \`[ILLEGIBLE]\`.
-
-# OUTPUT FORMAT
-Return ONLY the raw string of the transcribed text.
+# STRICT RULES
+1. **VERBATIM**: Output exact text. No summaries. No "Here is the text".
+2. **FORMAT**: Use Markdown (headers, tables).
+3. **LANGUAGE**: Keep original languages. Do NOT translate yet.
 `;
 
     const DEFAULT_TRANSLATE_PROMPT = `
 # SYSTEM ROLE
-You are a professional textual translator specializing in localization for Traditional Chinese (Hong Kong/Taiwan usage). You are NOT a summarizer.
+You are a professional translator for Traditional Chinese (Hong Kong).
 
 # TASK
-Translate the provided source content FULLY and ACCURATELY into fluent, natural Traditional Chinese (繁體中文).
+Translate the provided text FULLY into fluent Traditional Chinese.
 
-# STRICT TRANSLATION PROTOCOLS
-1. **100% COMPLETENESS**: 
-   - Translate every single sentence, clause, number, and punctuation mark.
-   - Do NOT summarize, condense, or omit any paragraph, no matter how repetitive it seems.
-   - Preserve all headers, footers, and page numbers in the translation.
-
-2. **TONE & STYLE**:
-   - Convert foreign idioms into natural Hong Kong/Taiwanese expressions (e.g., "bus" -> "巴士/公車", "software" -> "軟件/軟體").
-   - Maintain the formality of the original document (e.g., Legal, Medical, or Casual).
-
-3. **FORMATTING PRESERVATION**:
-   - Keep the original Markdown structure (paragraphs, lists, tables) exactly as provided.
-   - Do NOT output the original English/Source text unless explicitly asked. Output ONLY the translated result.
-
-# OUTPUT REQUIREMENT
-Output purely the translated text. Do not add introductions like "Here is the translation".
+# STRICT RULES
+1. **COMPLETENESS**: Do not summarize. Translate everything.
+2. **STYLE**: Natural Hong Kong phrasing.
+3. **FORMAT**: Preserve Markdown structure.
+4. **INPUT**: The user provides text that may have broken lines. Fix them while translating.
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v26_fullcontext";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v2_streaming";
     
     const PROVIDERS = {
-        gemini: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gemini-2.5-flash", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"] },
-        openrouter: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "openai/gpt-4o", canFetch: true, listUrl: "https://openrouter.ai/api/v1/models", models: ["openai/gpt-4o", "google/gemini-2.5-flash", "google/gemini-flash-1.5", "anthropic/claude-3.5-sonnet"] },
+        gemini: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gemini-2.0-flash-exp", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"] },
+        openrouter: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "openai/gpt-4o", canFetch: true, listUrl: "https://openrouter.ai/api/v1/models", models: ["openai/gpt-4o", "google/gemini-2.0-flash-exp", "anthropic/claude-3.5-sonnet"] },
         mistral: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "mistral-large-latest", canFetch: true, listUrl: "https://api.mistral.ai/v1/models", models: ["mistral-large-latest"] },
         openai: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gpt-4o", canFetch: true, listUrl: "https://api.openai.com/v1/models", models: ["gpt-4o"] },
         groq: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "llama-3.3-70b-versatile", canFetch: true, listUrl: "https://api.groq.com/openai/v1/models", models: ["llama-3.3-70b-versatile"] },
@@ -579,25 +596,27 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         return processedText.replace(/\n{3,}/g, "\n\n").trim();
     }
 
-    function unlockAudioContext() {
+    // 音效引擎喚醒函式 (強制確保有聲)
+    function ensureAudioContext() {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
         if (audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-                document.removeEventListener('click', unlockAudioContext);
-                document.removeEventListener('touchstart', unlockAudioContext);
-            });
+            audioContext.resume().catch(e => console.error("Audio resume failed", e));
         }
     }
-    document.addEventListener('click', unlockAudioContext);
-    document.addEventListener('touchstart', unlockAudioContext);
+    
+    // 綁定所有互動事件以喚醒音效
+    ['click', 'touchstart', 'keydown'].forEach(evt => {
+        document.addEventListener(evt, ensureAudioContext, { once: false, passive: true });
+    });
+    
     document.addEventListener('keydown', handleGlobalShortcuts);
 
     function initVoiceButtonEvents() {
         const btn = document.getElementById('voice-btn');
         if (!btn) return;
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startVoiceRecording(); }, {passive: false});
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); ensureAudioContext(); startVoiceRecording(); }, {passive: false});
         btn.addEventListener('touchend', (e) => { e.preventDefault(); stopVoiceRecording(); });
-        btn.addEventListener('mousedown', (e) => { startVoiceRecording(); });
+        btn.addEventListener('mousedown', (e) => { ensureAudioContext(); startVoiceRecording(); });
         btn.addEventListener('mouseup', (e) => { stopVoiceRecording(); });
         btn.addEventListener('mouseleave', (e) => { if(isVoiceRecording) stopVoiceRecording(); });
         btn.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -609,6 +628,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         
         if (key === 'v') {
             e.preventDefault();
+            ensureAudioContext();
             if (isVoiceRecording) stopVoiceRecording();
             else startVoiceRecording();
             return;
@@ -629,6 +649,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
         if (actions[key]) {
             e.preventDefault();
+            ensureAudioContext();
             let target;
             if (actions[key].id) target = document.getElementById(actions[key].id);
             else if (actions[key].selector) target = document.querySelector(actions[key].selector);
@@ -787,6 +808,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         input.value = ""; 
     }
 
+    // 核心 PDF 處理邏輯 (重寫)
     async function processPDFTool(file) {
         if (typeof window.pdfjsLib === 'undefined') {
             alert("PDF 核心正在載入中，請稍候再試。");
@@ -797,204 +819,148 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         resetConversation(); playAudioCue('start');
         
         const alwaysAI = document.getElementById('pdf-always-ai').checked;
-        const forceTranslate = document.getElementById('pdf-translate').checked;
+        const needTranslate = document.getElementById('pdf-translate').checked;
 
         try {
-            if (alwaysAI) {
-                updateStatusBar("正在將 PDF 轉為圖片以進行 AI 完整辨識...", "busy");
-                const images = await convertPdfToImages(file);
-                // 【核心修改】傳入模式，讓 performAIProcessing 決定是否需要「先OCR再翻譯」
-                await performAIProcessing(images, forceTranslate ? "translate_only" : "ocr_strict", null);
-                return;
-            }
+            updateStatusBar("請稍後，正在處理 PDF...", "busy");
+            
+            let extractedText = "";
+            let sourceMode = "text";
 
-            updateStatusBar("正在嘗試本機提取文字 (支援多國語言)...", "busy");
-            const localText = await extractTextFromPDF(file, true); 
-
-            const charCount = localText ? localText.replace(/\s/g, '').length : 0;
-
-            if (charCount > 20) {
-                if (forceTranslate) {
-                    updateStatusBar("本機提取成功，正在傳送給 AI 進行完整翻譯...", "busy");
-                    await performAIProcessing(null, "translate_text", localText);
+            // 1. 嘗試本機提取 (除非強制 AI)
+            if (!alwaysAI) {
+                const localText = await extractTextFromPDF(file);
+                const charCount = localText ? localText.replace(/\s/g, '').length : 0;
+                
+                if (charCount > 50) {
+                    extractedText = localText;
+                    sourceMode = "text";
+                    updateStatusBar("文字提取成功，準備處理...", "busy");
                 } else {
-                    updateStatusBar("本機提取完成", "ready");
-                    addMessage('assistant', localText);
-                    playAudioCue('success');
-                    const output = document.getElementById('chat-output');
-                    output.lastChild.focus();
+                    sourceMode = "image"; // 文字太少，轉圖片
                 }
             } else {
-                updateStatusBar(`本機提取文字過少 (${charCount} 字)，轉為圖片模式交由 AI 識別...`, "busy");
-                const images = await convertPdfToImages(file);
-                await performAIProcessing(images, forceTranslate ? "translate_only" : "ocr_strict", null);
+                sourceMode = "image";
             }
+
+            // 2. 執行 AI 處理 (OCR 或 直接翻譯)
+            await performAIProcessing(file, sourceMode, extractedText, needTranslate);
+
         } catch (e) {
-            console.error(e); updateStatusBar("PDF 處理錯誤: " + e.message, "error"); playAudioCue('error'); addMessage('error', "PDF 處理失敗: " + e.message);
+            console.error(e); updateStatusBar("錯誤: " + e.message, "error"); playAudioCue('error'); addMessage('error', "PDF 處理失敗: " + e.message);
         }
     }
 
-    async function convertPdfToImages(file) {
-        const arrayBuffer = await file.arrayBuffer();
-        
-        const loadingTask = window.pdfjsLib.getDocument({
-            data: arrayBuffer,
-            cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/',
-            cMapPacked: true,
-        });
-
-        loadingTask.onPassword = function (updatePassword, reason) {
-            playAudioCue('error');
-            if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
-                updateStatusBar("文件受保護，請輸入密碼...", "busy");
-                const password = prompt("這份文件受密碼保護，請輸入密碼：");
-                updatePassword(password);
-            } else if (reason === window.pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
-                updateStatusBar("密碼錯誤！", "error");
-                alert("密碼錯誤，請重新輸入。");
-                const password = prompt("密碼錯誤！請重新輸入：");
-                updatePassword(password);
-            }
-        };
-        
-        const pdf = await loadingTask.promise;
-        const maxPages = pdf.numPages;
-        const images = [];
-        const limit = Math.min(maxPages, 20); 
-
-        for (let i = 1; i <= limit; i++) {
-            updateStatusBar(`正在渲染 PDF 頁面 (${i}/${limit})...`, 'busy');
-            const page = await pdf.getPage(i);
-            
-            const viewportRaw = page.getViewport({ scale: 1.0 });
-            const MAX_DIMENSION = 2048;
-            const maxSide = Math.max(viewportRaw.width, viewportRaw.height);
-            let finalScale = 1.5; 
-            if (maxSide * finalScale > MAX_DIMENSION) {
-                finalScale = MAX_DIMENSION / maxSide;
-            }
-            
-            const viewport = page.getViewport({ scale: finalScale });
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-
-            await page.render({ canvasContext: context, viewport: viewport }).promise;
-            
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            images.push(dataUrl.split(',')[1]); 
-        }
-        return images;
-    }
-
-    // 【核心修正】performAIProcessing 重構為兩階段：OCR (Accumulate) -> Translate
-    async function performAIProcessing(inputData, mode, textData) {
+    // AI 處理核心 (串流 + 二階段分流)
+    async function performAIProcessing(file, sourceMode, textData, needTranslate) {
         const controller = new AbortController(); 
-        chatHistory = []; 
-        const isImageArray = Array.isArray(inputData);
-        
-        // --- 變數準備 ---
         let accumulatedText = "";
-        
-        // --- 階段一：文本獲取 (若為圖片則 OCR，若為文字則直接使用) ---
-        if (isImageArray) {
-            // 強制使用 OCR 模式進行識別
-            const ocrMode = "ocr_strict";
-            const ocrSystemPrompt = memoryPrompts.ocr;
-            
-            // 決定 OCR 的 Provider & Key & Model
-            let ocrProvider = document.getElementById('provider-select').value;
-            let ocrModel = currentActiveModelId;
-            if (specificConfigs.ocr) {
-                ocrProvider = specificConfigs.ocr.provider;
-                ocrModel = specificConfigs.ocr.model;
-            }
+
+        // === 階段一：獲取文字 (OCR 迴圈 或 直接使用提取文字) ===
+        if (sourceMode === "image") {
+            // 設定 OCR 參數
+            let ocrProvider = specificConfigs.ocr ? specificConfigs.ocr.provider : document.getElementById('provider-select').value;
+            let ocrModel = specificConfigs.ocr ? specificConfigs.ocr.model : currentActiveModelId;
             let ocrApiKey = (ocrProvider === document.getElementById('provider-select').value) 
                             ? document.getElementById('api-key').value 
                             : localStorage.getItem(`${ocrProvider}_key`);
+            const ocrSystemPrompt = memoryPrompts.ocr;
 
-            if (!ocrApiKey) throw new Error(`找不到 ${ocrProvider} (OCR用) 的 API Key。`);
+            if (!ocrApiKey) throw new Error(`缺少 ${ocrProvider} (OCR) 的 API Key`);
 
-            updateStatusBar(`階段 1/2: 正在 OCR ${inputData.length} 頁文件...`, "busy");
-            const singlePagePrompt = "Transcribe this page exactly.";
+            // 準備 PDF
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/', cMapPacked: true }).promise;
+            const totalPages = pdf.numPages;
 
-            for (let i = 0; i < inputData.length; i++) {
-                const imgBase64 = inputData[i];
-                const pageNum = i + 1;
-                let success = false;
-                let retryCount = 0;
+            // 串流處理：一頁一頁轉
+            updateVisualProgress(true, `OCR 處理中: 0/${totalPages}`);
+            
+            for (let i = 1; i <= totalPages; i++) {
+                // 更新視覺進度 (不觸發語音)
+                document.getElementById('visual-progress').innerText = `OCR 正在識別第 ${i} / ${totalPages} 頁...`;
+                
+                // 1. 轉圖片
+                const page = await pdf.getPage(i);
+                const viewportRaw = page.getViewport({ scale: 1.0 });
+                const maxDim = 2048;
+                const scale = Math.min(maxDim / Math.max(viewportRaw.width, viewportRaw.height), 2.0); // 限制最大解析度
+                const viewport = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width; canvas.height = viewport.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                const imgBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
-                while (!success && retryCount < 3) {
+                // 2. 呼叫 AI OCR
+                let retry = 0;
+                let pageText = "";
+                while(retry < 3) {
                     try {
-                        updateStatusBar(`[OCR ${ocrProvider}] 處理中: 第 ${pageNum}/${inputData.length} 頁${retryCount>0?` (重試 ${retryCount})`:''} ...`, "busy");
-                        let res = await callAI(ocrProvider, singlePagePrompt, imgBase64, "image/jpeg", controller.signal, ocrModel, ocrApiKey, ocrSystemPrompt);
-                        res = smartMergeLines(res);
-                        const pageContent = `## [第 ${pageNum} 頁]\n${res}\n\n`;
-                        accumulatedText += pageContent;
-                        success = true;
-                        if (i < inputData.length - 1) await sleep(2000); // 避免速率限制
-                    } catch (err) {
-                        if (err.message.includes("429")) {
-                            updateStatusBar(`流量限制，30秒後重試...`, "busy");
-                            await sleep(30000);
-                            retryCount++;
-                        } else {
-                            accumulatedText += `## [第 ${pageNum} 頁]\n(處理失敗: ${err.message})\n\n`;
-                            success = true; 
-                        }
+                        pageText = await callAI(ocrProvider, "Transcribe this page exactly.", imgBase64, "image/jpeg", controller.signal, ocrModel, ocrApiKey, ocrSystemPrompt);
+                        break;
+                    } catch(e) {
+                        retry++;
+                        console.warn(`Page ${i} retry ${retry}`, e);
+                        await sleep(2000);
                     }
                 }
+                
+                // 3. 累積並釋放記憶體
+                accumulatedText += `## [Page ${i}]\n${smartMergeLines(pageText)}\n\n`;
+                
+                // 清理
+                canvas.width = 0; canvas.height = 0; canvas.remove();
+                await sleep(500); // 讓瀏覽器喘口氣
             }
+            updateVisualProgress(false);
+
         } else {
-            // 若原本就是文字模式，直接使用
-            accumulatedText = textData;
+            // 已經有文字 (Text Mode)
+            accumulatedText = textData; 
         }
 
-        // --- 階段二：根據結果決定 輸出 或 翻譯 ---
-        // 判斷是否需要翻譯 (mode 包含 translate)
-        if (mode === "translate_only" || mode === "translate_text") {
-            const transMode = "translate_text";
-            const transSystemPrompt = memoryPrompts.translate;
-
-            // 決定 Translate 的 Provider & Key & Model
-            let transProvider = document.getElementById('provider-select').value;
-            let transModel = currentActiveModelId;
-            if (specificConfigs.translate) {
-                transProvider = specificConfigs.translate.provider;
-                transModel = specificConfigs.translate.model;
-            }
-            let transApiKey = (transProvider === document.getElementById('provider-select').value)
-                              ? document.getElementById('api-key').value
+        // === 階段二：翻譯 (若需要) ===
+        if (needTranslate) {
+            let transProvider = specificConfigs.translate ? specificConfigs.translate.provider : document.getElementById('provider-select').value;
+            let transModel = specificConfigs.translate ? specificConfigs.translate.model : currentActiveModelId;
+            let transApiKey = (transProvider === document.getElementById('provider-select').value) 
+                              ? document.getElementById('api-key').value 
                               : localStorage.getItem(`${transProvider}_key`);
-
-            if (!transApiKey) throw new Error(`找不到 ${transProvider} (翻譯用) 的 API Key。`);
-
-            updateStatusBar(`階段 2/2: [${transProvider}] 正在根據全文進行翻譯...`, "busy");
-            const userTransPrompt = `[SOURCE TEXT TO TRANSLATE]:\n${accumulatedText}`;
             
-            try {
-                const finalRes = await callAI(transProvider, userTransPrompt, null, null, controller.signal, transModel, transApiKey, transSystemPrompt);
-                addMessage('assistant', finalRes);
-            } catch (e) {
-                if (e.message.includes("Failed to fetch") && transProvider === 'gemini') {
-                    throw new Error("CORS 錯誤: Google 拒絕連線，請改用 OpenRouter。");
-                }
-                throw e;
-            }
-
+            updateStatusBar("正在進行全文翻譯...", "busy");
+            const transInput = `[SOURCE TEXT]:\n${accumulatedText}`;
+            const finalRes = await callAI(transProvider, transInput, null, null, controller.signal, transModel, transApiKey, memoryPrompts.translate);
+            
+            addMessage('assistant', finalRes);
         } else {
-            // 不需要翻譯，直接輸出 OCR 結果
+            // 不需要翻譯，直接輸出整理後的文字
             updateStatusBar("處理完成", "ready");
             addMessage('assistant', accumulatedText);
         }
 
-        playAudioCue('success'); updateStatusBar("任務完成", "ready");
-        document.getElementById('chat-output').lastChild.focus();
-        document.getElementById('system-prompt').value = memoryPrompts[currentEditingMode]; // 恢復 UI 顯示
+        playAudioCue('success'); 
+        updateStatusBar("任務完成", "ready");
+        
+        // 完成後才將焦點移至結果區
+        setTimeout(() => {
+            const output = document.getElementById('chat-output');
+            if(output.lastChild) output.lastChild.focus();
+        }, 500);
     }
 
-    async function extractTextFromPDF(file, reportProgress = false) {
+    // 輔助函式：更新視覺進度條 (不干擾語音)
+    function updateVisualProgress(show, text="") {
+        const el = document.getElementById('visual-progress');
+        if (show) {
+            el.classList.add('active');
+            el.innerText = text;
+        } else {
+            el.classList.remove('active');
+            el.innerText = "";
+        }
+    }
+
+    async function extractTextFromPDF(file) {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const loadingTask = window.pdfjsLib.getDocument({
@@ -1002,98 +968,19 @@ Output purely the translated text. Do not add introductions like "Here is the tr
                 cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/',
                 cMapPacked: true,
             });
-
-            loadingTask.onPassword = function (updatePassword, reason) {
-                playAudioCue('error');
-                if (reason === window.pdfjsLib.PasswordResponses.NEED_PASSWORD) {
-                    updateStatusBar("需要密碼解鎖 PDF...", "busy");
-                    const password = prompt("這份文件受密碼保護，請輸入密碼：");
-                    updatePassword(password);
-                } else if (reason === window.pdfjsLib.PasswordResponses.INCORRECT_PASSWORD) {
-                    updateStatusBar("密碼錯誤", "error");
-                    alert("密碼錯誤，請重新輸入。");
-                    const password = prompt("密碼錯誤！請重新輸入：");
-                    updatePassword(password);
-                }
-            };
-
             const pdf = await loadingTask.promise;
             let fullText = "";
-            const maxPages = pdf.numPages;
-            const isCJK = (c) => /[\u2E80-\u2FD5\u3190-\u319f\u3400-\u4DBF\u4E00-\u9FCC\uF900-\uFAAD\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(c);
-
-            for (let i = 1; i <= maxPages; i++) {
-                if (reportProgress) updateStatusBar(`正在提取文字 (第 ${i} / ${maxPages} 頁)...`, "busy");
+            
+            // 簡單提取，不顯示詳細進度以減少語音干擾
+            for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                let lines = [];
-                let currentLine = [];
-                
-                for (const item of textContent.items) {
-                    if (!item.str) continue;
-                    const y = item.transform[5]; 
-                    const height = item.transform[3] || item.height || 10; 
-                    if (currentLine.length > 0) {
-                        const lastItemY = currentLine[0].transform[5];
-                        if (Math.abs(y - lastItemY) > (height * 0.5)) {
-                            lines.push(currentLine);
-                            currentLine = [];
-                        }
-                    }
-                    currentLine.push(item);
-                }
-                if (currentLine.length > 0) lines.push(currentLine);
-
-                let processedLines = [];
-                for (const line of lines) {
-                    line.sort((a, b) => a.transform[4] - b.transform[4]);
-                    let lineText = "";
-                    let lastItemXEnd = null;
-                    let lastChar = "";
-
-                    for (const item of line) {
-                        const str = item.str;
-                        const x = item.transform[4];
-                        const w = item.width;
-                        const fontSize = item.transform[0] || 10;
-                        if (lastItemXEnd !== null) {
-                            const gap = x - lastItemXEnd;
-                            if (gap > (fontSize * 0.4)) { 
-                                const currChar = str.charAt(0);
-                                if (!(isCJK(lastChar) && isCJK(currChar))) { lineText += " "; }
-                            }
-                        }
-                        lineText += str;
-                        lastItemXEnd = x + w;
-                        lastChar = str.slice(-1);
-                    }
-                    processedLines.push(lineText.trim());
-                }
-
-                let pageParagraphs = "";
-                for (let j = 0; j < processedLines.length; j++) {
-                    const currLine = processedLines[j];
-                    if (j < processedLines.length - 1) {
-                        const nextLine = processedLines[j + 1];
-                        const lastChar = currLine.slice(-1);
-                        const nextChar = nextLine.charAt(0);
-                        const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
-
-                        if (isSentenceEnd) { pageParagraphs += currLine + "\n"; } 
-                        else {
-                            if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) { pageParagraphs += currLine.slice(0, -1); } 
-                            else if (isCJK(lastChar) && isCJK(nextChar)) { pageParagraphs += currLine; } 
-                            else { pageParagraphs += currLine + " "; }
-                        }
-                    } else { pageParagraphs += currLine + "\n"; }
-                }
-                if (pageParagraphs.trim().length > 0) { fullText += `## [第 ${i} 頁]\n${pageParagraphs}\n\n`; }
+                const content = await page.getTextContent();
+                const strings = content.items.map(item => item.str);
+                fullText += `## [Page ${i}]\n${strings.join(' ')}\n\n`;
             }
-            return fullText.trim();
+            return smartMergeLines(fullText);
         } catch (e) {
-            console.error("PDF extract error", e);
-            if (e.name === 'PasswordException') return null;
-            throw e;
+            return null;
         }
     }
 
@@ -1147,6 +1034,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     }
 
     async function startVoiceRecording() {
+        ensureAudioContext(); // 再次確保音效
         if (isVoiceRecording) return;
         const engine = document.getElementById('voice-engine').value;
         
@@ -1177,6 +1065,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
 
     function stopVoiceRecording() {
         if (!isVoiceRecording) return;
+        ensureAudioContext(); // 確保結束音效
         const engine = document.getElementById('voice-engine').value;
         playAudioCue('success');
         isVoiceRecording = false; 
@@ -1221,6 +1110,7 @@ Output purely the translated text. Do not add introductions like "Here is the tr
         const b = document.getElementById('status-bar'); 
         b.innerText = t; 
         b.className = s; 
+        // 只有錯誤訊息需要主動打斷朗讀，其他狀態用 polite
         b.setAttribute('aria-live', s === 'error' ? 'assertive' : 'polite');
     }
     
@@ -1337,8 +1227,12 @@ Output purely the translated text. Do not add introductions like "Here is the tr
     function readFileAsBase64(f) { return new Promise((r,j)=>{const rd=new FileReader(); rd.onload=()=>r(rd.result.split(',')[1]); rd.onerror=j; rd.readAsDataURL(f);}); }
 
     async function handleSubmit(e) {
-        e.preventDefault(); const txt = document.getElementById('user-input').value.trim();
+        e.preventDefault(); 
+        ensureAudioContext(); // 確保音效
+        
+        const txt = document.getElementById('user-input').value.trim();
         if(!txt && !selectedFile) return showTransientStatus("請輸入", 'error');
+        
         playAudioCue('start'); updateStatusBar("處理中...", 'busy');
         const btn = document.getElementById('submit-btn'); btn.disabled=true;
         const ctl = new AbortController(); const tm = setTimeout(()=>ctl.abort(), document.getElementById('timeout-setting').value*1000);
@@ -1346,25 +1240,26 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             let input = txt; let fileData = null; let mime = null; let skipFile = false;
             if(selectedFile) {
                 if(selectedFile.type==='application/pdf') {
+                    // 一般對話中的 PDF，使用提取模式
                     const pdfText = await extractTextFromPDF(selectedFile);
-                    const charCount = pdfText ? pdfText.replace(/\s/g, '').length : 0;
-                    if(charCount > 20) { input=`[PDF]:\n${pdfText}\n\n${txt}`; skipFile=true; }
-                    else { 
-                        fileData = await convertPdfToImages(selectedFile); 
-                        mime = "application/pdf-images"; 
-                    }
+                    if(pdfText) { input=`[PDF CONTENT]:\n${pdfText}\n\n${txt}`; skipFile=true; }
                 } else { 
                     fileData=await readFileAsBase64(selectedFile); mime=selectedFile.type; 
                 }
             }
-            if (mime === "application/pdf-images") {
-                await performAIProcessing(fileData, "ocr_strict", null);
-            } else {
-                const res = await callAI(document.getElementById('provider-select').value, input, skipFile?null:fileData, mime, ctl.signal, null, null, memoryPrompts.chat);
-                document.getElementById('user-input').value=""; document.getElementById('upload-btn').innerText="選擇檔案 (Alt+Shift+U)"; selectedFile=null;
-                addMessage('user', txt||"[檔案]"); const ai = addMessage('assistant', res); ai.focus(); chatHistory.push({role:'user',content:input}); chatHistory.push({role:'assistant',content:res});
-                playAudioCue('success'); showReadyStatus();
-            }
+            
+            const res = await callAI(document.getElementById('provider-select').value, input, skipFile?null:fileData, mime, ctl.signal, null, null, memoryPrompts.chat);
+            document.getElementById('user-input').value=""; document.getElementById('upload-btn').innerText="選擇檔案 (Alt+Shift+U)"; selectedFile=null;
+            addMessage('user', txt||"[檔案]"); 
+            const ai = addMessage('assistant', res); 
+            
+            // 對話結束後，將焦點移至最後的回應，並播放成功音效
+            setTimeout(() => {
+                 ai.focus();
+            }, 100);
+            
+            chatHistory.push({role:'user',content:input}); chatHistory.push({role:'assistant',content:res});
+            playAudioCue('success'); showReadyStatus();
         } catch(e) { addMessage('error', e.message); playAudioCue('error'); showReadyStatus(); } finally { clearTimeout(tm); btn.disabled=false; }
     }
 
@@ -1405,11 +1300,12 @@ Output purely the translated text. Do not add introductions like "Here is the tr
             }
 
             let content = [];
-            if (isMultiImage) {
+            // 標準 OpenAI 格式
+            if (file) {
                 content.push({type:"text", text:txt});
-                file.forEach(b64 => content.push({type:"image_url", image_url:{url:`data:image/jpeg;base64,${b64}`}}));
+                content.push({type:"image_url", image_url:{url:`data:${mime};base64,${file}`}});
             } else {
-                content = file ? [{type:"text",text:txt}, {type:"image_url",image_url:{url:`data:${mime};base64,${file}`}}] : txt;
+                content = txt;
             }
             body = { ...body, model:m, messages:[{role:"system",content:sys}, {role:"user",content:content}], temperature:0.3 };
         }
