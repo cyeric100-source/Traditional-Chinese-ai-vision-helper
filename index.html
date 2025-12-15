@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025 修正版)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025 最終修正版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
@@ -11,16 +11,16 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 【核心】PDF.js v5.4.449 : 雙重 CDN 備援載入機制 -->
+    <!-- 【核心】PDF.js v5.4.449 : 修正檔名路徑 (.mjs) + 雙重 CDN 備援 -->
     <script type="module">
-        // 定義主 CDN 與備用 CDN (保留具體版本號)
+        // 定義主 CDN 與備用 CDN (修正為 .mjs，移除 .min)
         const PDF_URLS = [
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.min.mjs',
-            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.min.mjs'
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.mjs',
+            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.mjs'
         ];
         const WORKER_URLS = [
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs',
-            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs'
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.mjs',
+            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.worker.mjs'
         ];
 
         async function loadPdfLib() {
@@ -304,7 +304,7 @@
 </div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 修正版)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 最終修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -542,7 +542,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
 4. **INPUT**: The user provides text that may have broken lines. Fix them while translating.
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v2_streaming";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v3_mjs";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gemini-2.0-flash-exp", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -1287,7 +1287,9 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         } else {
             if (p === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
-                headers['HTTP-Referer'] = location.href;
+                // 【關鍵修正】強制偽裝 Referer 以通過 CORS 檢查
+                headers['HTTP-Referer'] = 'https://cyeric100-source.github.io/Traditional-Chinese-ai-vision-helper/';
+                headers['X-Title'] = 'AI Vision Helper';
                 if(document.getElementById('openrouter-web-search').checked) body.plugins = [{id:"web"}];
             } else if (p === 'mistral') {
                 url = "https://api.mistral.ai/v1/chat/completions";
