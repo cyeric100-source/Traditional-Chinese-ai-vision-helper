@@ -3,56 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025 穩定修正版)</title>
+    <title>AI 視障助理 (2025 專業修正版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/lib/marked.umd.min.js"></script>
     
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
 
-    <!-- 【核心】PDF.js v5.4.449 : 改用 Legacy 版本以確保 Blob Worker 相容性 -->
+    <!-- 【核心修正 1】PDF.js v5.4.449 : 使用 Fetch + Blob 完美解決 Worker 跨域問題 -->
     <script type="module">
-        // 定義主 CDN 與備用 CDN (使用 legacy/build 路徑)
-        const PDF_URLS = [
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.mjs',
-            'https://unpkg.com/pdfjs-dist@5.4.449/legacy/build/pdf.mjs'
-        ];
-        const WORKER_URLS = [
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.mjs',
-            'https://unpkg.com/pdfjs-dist@5.4.449/legacy/build/pdf.worker.mjs'
-        ];
+        const PDF_VERSION = '5.4.449';
+        const PDF_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_VERSION}/legacy/build/pdf.mjs`;
+        const WORKER_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_VERSION}/legacy/build/pdf.worker.mjs`;
 
-        async function loadPdfLib() {
-            for (let i = 0; i < PDF_URLS.length; i++) {
-                try {
-                    const lib = await import(PDF_URLS[i]);
-                    window.pdfjsLib = lib;
-                    
-                    // 設定 Worker (Blob 優先策略)
-                    const workerUrl = WORKER_URLS[i];
-                    try {
-                        const response = await fetch(workerUrl);
-                        if (!response.ok) throw new Error("Worker fetch failed");
-                        const workerScript = await response.text();
-                        const blob = new Blob([workerScript], { type: "application/javascript" });
-                        lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-                        console.log(`PDF Lib loaded from ${PDF_URLS[i]} (Legacy/Blob Mode)`);
-                    } catch (e) {
-                        console.warn("Blob load failed, using direct URL.", e);
-                        lib.GlobalWorkerOptions.workerSrc = workerUrl;
-                    }
-                    
-                    window.dispatchEvent(new Event('pdfjs-loaded'));
-                    return; // 成功載入則退出
-                } catch (e) {
-                    console.warn(`Failed to load PDF.js from ${PDF_URLS[i]}, trying backup...`, e);
-                }
+        async function initPdfSystem() {
+            try {
+                // 1. 載入主程式庫
+                const pdfjsLib = await import(PDF_BASE);
+                window.pdfjsLib = pdfjsLib;
+
+                // 2. 手動 Fetch Worker 程式碼並轉為 Blob (騙過瀏覽器 CORS)
+                const response = await fetch(WORKER_URL);
+                if (!response.ok) throw new Error("Worker download failed");
+                const workerScript = await response.text();
+                const blob = new Blob([workerScript], { type: "application/javascript" });
+                const blobUrl = URL.createObjectURL(blob);
+
+                // 3. 設定 Worker
+                pdfjsLib.GlobalWorkerOptions.workerSrc = blobUrl;
+                console.log("PDF System Initialized (Blob Mode)");
+                
+                // 通知介面已就緒
+                window.dispatchEvent(new Event('pdfjs-loaded'));
+
+            } catch (e) {
+                console.error("PDF Init Failed:", e);
+                window.reportError("PDF 核心載入失敗", e);
             }
-            alert("錯誤：無法載入 PDF 核心組件，請檢查網路連線。");
         }
-
-        loadPdfLib();
+        initPdfSystem();
     </script>
     
     <style>
@@ -83,7 +73,7 @@
             user-select: none;
         }
         
-        .message-area, #system-prompt, #user-input, input {
+        .message-area, #system-prompt, #user-input, input, #error-log-area {
             -webkit-user-select: text;
             user-select: text;
         }
@@ -110,15 +100,12 @@
             color: var(--text-color); font-size: 1.1rem; border-radius: 6px; box-sizing: border-box;
         }
 
-        #system-prompt {
-            min-height: 300px;
+        #system-prompt, #error-log-area {
+            min-height: 150px;
             resize: vertical;
             overflow-y: auto;
             font-family: monospace;
             line-height: 1.4;
-            border-top-left-radius: 0;
-            border-top-right-radius: 0;
-            border-top: none;
         }
         
         *:focus-visible { outline: 4px solid var(--accent-color) !important; }
@@ -154,7 +141,6 @@
             box-shadow: inset 0 0 10px #000;
         }
         
-        /* 任務指派按鈕群組 */
         .assign-btn-group {
             display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap;
         }
@@ -173,7 +159,6 @@
         #config-status-display strong { color: #88ccff; }
         #config-status-display .highlight { color: var(--accent-color); }
 
-        /* 系統指令標籤頁樣式 */
         .prompt-tabs {
             display: flex; gap: 2px; margin-top: 15px;
         }
@@ -251,7 +236,6 @@
         }
         #user-input.dragover { border-color: var(--accent-color) !important; background-color: #222; }
 
-        /* 狀態列 */
         #status-bar-container {
             position: fixed; top: 0; left: 0; right: 0;
             z-index: 2000; display: flex; flex-direction: column;
@@ -265,11 +249,10 @@
             transition: background-color 0.3s;
         }
         
-        /* 視覺進度條 (不透過語音朗讀) */
         #visual-progress {
             background: #333; color: #88ccff; font-size: 0.9rem; 
             text-align: center; padding: 2px; border-bottom: 1px solid #444;
-            display: none; /* 預設隱藏 */
+            display: none; 
         }
         #visual-progress.active { display: block; }
 
@@ -304,7 +287,7 @@
 </div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 穩定修正版)</h1>
+    <h1 class="app-title">AI 視障助理 (2025 專業修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -314,16 +297,16 @@
         
         <div style="margin-top: 15px;">
             <div class="cors-notice">
-                <strong>⚠️ 重要提示：</strong> OpenAI, Groq, Mistral 等服務商可能會封鎖瀏覽器直接連線 (CORS)。
-                <br>若遇到連線錯誤，請改用 <strong>OpenRouter</strong> (推薦) 或 Gemini。
+                <strong>⚠️ 連線提示 (2025)：</strong> 
+                瀏覽器直連 OpenAI/Groq 可能被阻擋。推薦使用 <strong>Google Gemini</strong> 或 <strong>OpenRouter</strong> 以確保穩定連線。
             </div>
 
             <label for="provider-select">主要 AI 服務商:</label>
             <select id="provider-select" onchange="handleProviderChange()">
-                <option value="gemini">Google Gemini (推薦 - 支援瀏覽器)</option>
-                <option value="openrouter">OpenRouter (萬用中轉 - 推薦解決 CORS)</option>
-                <option value="openai">OpenAI (需後端或 OpenRouter)</option>
-                <option value="groq">Groq (需後端或 OpenRouter)</option>
+                <option value="gemini">Google Gemini (推薦 - 穩定快速)</option>
+                <option value="openrouter">OpenRouter (萬用中轉 - 推薦)</option>
+                <option value="openai">OpenAI (可能需 Proxy)</option>
+                <option value="groq">Groq (可能需 Proxy)</option>
                 <option value="mistral">Mistral AI</option>
                 <option value="perplexity">Perplexity</option>
             </select>
@@ -332,9 +315,9 @@
             <input type="password" id="api-key" placeholder="在此貼上您的 API Key" autocomplete="off">
             
             <label for="model-filter-input">篩選模型 (即時搜尋):</label>
-            <input type="text" id="model-filter-input" placeholder="輸入關鍵字篩選 (如: gemini, latest)..." oninput="handleModelFilter()">
+            <input type="text" id="model-filter-input" placeholder="輸入關鍵字篩選 (如: flash, pro)..." oninput="handleModelFilter()">
 
-            <label for="model-select">模型選擇 (2025最新):</label>
+            <label for="model-select">模型選擇 (2025 Stable):</label>
             <div class="row" style="margin-bottom: 10px;">
                 <select id="model-select" style="margin-bottom:0;" onchange="handleModelSelectChange()"></select>
                 <button type="button" id="refresh-btn" class="secondary" style="width: auto; margin-top:0;" onclick="fetchOnlineModels()" title="從網路更新模型清單">更新</button>
@@ -347,17 +330,12 @@
             <!-- 任務指派 -->
             <div class="settings-subsection">
                 <h3>分工設定 (Task Assignment)</h3>
-                <p style="margin:0 0 10px 0; font-size:0.9rem; color:#ccc;">
-                    說明：您可以在上方選擇不同的 AI 與模型，然後按下按鈕將其指定為特定任務專用。
-                </p>
                 <div class="assign-btn-group">
                     <button type="button" onclick="setSpecificConfig('ocr')">設為 OCR PDF 專用</button>
                     <button type="button" onclick="setSpecificConfig('translate')">設為 翻譯 PDF 專用</button>
                     <button type="button" class="reset" onclick="clearSpecificConfigs()">重置為跟隨主要設定</button>
                 </div>
-                <div id="config-status-display" aria-live="polite">
-                    目前設定載入中...
-                </div>
+                <div id="config-status-display" aria-live="polite">目前設定載入中...</div>
             </div>
 
             <div id="openrouter-settings" class="hidden settings-subsection">
@@ -388,14 +366,21 @@
             <label for="timeout-setting">回應逾時 (秒):</label>
             <input type="number" id="timeout-setting" value="120" min="5" step="5">
 
-            <!-- 系統指令編輯器 (Tab 介面) -->
+            <!-- 系統指令編輯器 -->
             <label style="margin-top: 15px; display:block; font-weight:bold;">系統指令 (System Prompts):</label>
             <div class="prompt-tabs">
-                <button type="button" id="tab-chat" class="active" onclick="switchPromptEditor('chat')">編輯: 一般對話指令</button>
-                <button type="button" id="tab-ocr" onclick="switchPromptEditor('ocr')">編輯: OCR 專用指令</button>
-                <button type="button" id="tab-translate" onclick="switchPromptEditor('translate')">編輯: 翻譯專用指令</button>
+                <button type="button" id="tab-chat" class="active" onclick="switchPromptEditor('chat')">編輯: 一般對話</button>
+                <button type="button" id="tab-ocr" onclick="switchPromptEditor('ocr')">編輯: OCR 專用</button>
+                <button type="button" id="tab-translate" onclick="switchPromptEditor('translate')">編輯: 翻譯專用</button>
             </div>
             <textarea id="system-prompt" placeholder="在此輸入系統指令..."></textarea>
+            
+            <!-- 【修正 4】錯誤回報區 -->
+            <div class="settings-subsection" style="border-color: #550000; background: #220000;">
+                <h3>錯誤診斷日誌 (Debug Log)</h3>
+                <textarea id="error-log-area" readonly placeholder="系統錯誤將顯示於此..."></textarea>
+                <button type="button" onclick="copyErrorLog()">複製錯誤內容以回報</button>
+            </div>
 
             <div class="row">
                 <button type="button" onclick="saveSettings()">儲存設定</button>
@@ -413,22 +398,19 @@
         <div style="margin-top: 15px;">
             <input type="file" id="pdf-tool-input" class="visually-hidden" accept="application/pdf" onchange="handlePDFToolFileSelect()">
 
-            <!-- 控制項 A -->
             <button type="button" id="pdf-start-btn" class="tool-btn" onclick="document.getElementById('pdf-tool-input').click()" disabled>
                 📄 PDF 完整閱讀 (載入中...)
             </button>
             <small style="display:block; margin: 5px 0 15px 0; color:#ccc;">
-                * 說明：優先使用本機提取。若失敗，將自動轉成圖片傳給 AI (OCR)。
+                * 說明：優先使用本機提取。若失敗，自動轉為低流量圖片 (OCR)。
             </small>
 
             <div class="row">
-                <!-- 控制項 B -->
                 <label class="check-btn">
                     <input type="checkbox" id="pdf-always-ai">
                     <span>總是將 PDF 傳給 AI (跳過本機提取)</span>
                 </label>
 
-                <!-- 控制項 C -->
                 <label class="check-btn">
                     <input type="checkbox" id="pdf-translate">
                     <span>翻譯成繁體中文 (OCR後翻譯)</span>
@@ -488,7 +470,30 @@
 </footer>
 
 <script>
-    // 監聽 PDF 核心載入事件
+    // --- 全域錯誤處理機制 ---
+    window.reportError = function(msg, errObj) {
+        const time = new Date().toLocaleTimeString();
+        const errText = errObj ? (errObj.stack || errObj.message || JSON.stringify(errObj)) : "N/A";
+        const logEntry = `[${time}] ERROR: ${msg}\nDetails: ${errText}\n----------------\n`;
+        
+        const logArea = document.getElementById('error-log-area');
+        if (logArea) logArea.value += logEntry;
+        
+        console.error(msg, errObj);
+        
+        const statusBar = document.getElementById('status-bar');
+        if (statusBar) {
+            statusBar.innerText = `錯誤: ${msg} (請查看日誌)`;
+            statusBar.className = 'error';
+            statusBar.setAttribute('aria-live', 'assertive');
+        }
+        playAudioCue('error');
+    };
+
+    window.onerror = function(message, source, lineno, colno, error) {
+        window.reportError(`Global: ${message}`, error);
+    };
+
     window.addEventListener('pdfjs-loaded', () => {
         const btn = document.getElementById('pdf-start-btn');
         btn.innerText = "📄 PDF 完整閱讀 (智能偵測啟動)";
@@ -496,57 +501,52 @@
         showReadyStatus();
     });
 
-    window.onerror = function(message, source, lineno, colno, error) {
-        const statusBar = document.getElementById('status-bar');
-        if (statusBar) {
-            statusBar.innerText = `發生錯誤: ${message}`;
-            statusBar.className = 'error';
-            statusBar.setAttribute('aria-live', 'assertive');
-        }
-        console.error("Global Error:", message, error);
-    };
+    // --- 預設指令 ---
+    const DEFAULT_CHAT_PROMPT = `# 角色設定
+你是一位專為香港視障人士服務的 AI 助理。
 
-    const DEFAULT_CHAT_PROMPT = `# 角色設定 (Persona)
-你是一位專為香港視障人士服務的頂尖 AI 視覺與資訊助理。你的核心職責是成為用戶的眼睛與大腦延伸。
-
-# 全域規則 (Global Rules)
-1. **語言**：繁體中文（香港慣用）。
-2. **無障礙格式**：使用 Markdown 標題 (#) 與清單 (-)，不使用干擾朗讀的符號。
-3. **精簡**：重點置前，避免冗長。
-`;
+# 規則
+1. **語言**：繁體中文（香港）。
+2. **格式**：使用 Markdown 標題 (#) 與清單 (-)，避免裝飾性符號。
+3. **精簡**：重點置前，語氣友善。`;
 
     const DEFAULT_OCR_PROMPT = `
 # SYSTEM ROLE
-You are a state-of-the-art Optical Character Recognition (OCR) engine.
+OCR Engine for visually impaired users.
 
 # TASK
-Transcribe EVERY single visible character from the image into text.
+Transcribe text from the image strictly.
 
-# STRICT RULES
-1. **VERBATIM**: Output exact text. No summaries. No "Here is the text".
-2. **FORMAT**: Use Markdown (headers, tables).
-3. **LANGUAGE**: Keep original languages. Do NOT translate yet.
-`;
+# RULES
+1. **Verbatim**: No summaries. Output exact text.
+2. **Format**: Markdown headers/lists.
+3. **Language**: Keep original (mostly Traditional Chinese/English).`;
 
     const DEFAULT_TRANSLATE_PROMPT = `
-# SYSTEM ROLE
-You are a professional translator for Traditional Chinese (Hong Kong).
+# ROLE
+Translator (Traditional Chinese - Hong Kong).
 
 # TASK
-Translate the provided text FULLY into fluent Traditional Chinese.
+Translate the input text fully and fluently. Fix broken lines.`;
 
-# STRICT RULES
-1. **COMPLETENESS**: Do not summarize. Translate everything.
-2. **STYLE**: Natural Hong Kong phrasing.
-3. **FORMAT**: Preserve Markdown structure.
-4. **INPUT**: The user provides text that may have broken lines. Fix them while translating.
-`;
-
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v5_legacy_chk";
+    const PROMPT_VERSION_KEY = "prompt_ver_2025_release";
     
+    // 【核心修正 2】更新模型清單 (Gemini 2.5 Flash)
     const PROVIDERS = {
-        gemini: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gemini-2.0-flash-exp", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"] },
-        openrouter: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "openai/gpt-4o", canFetch: true, listUrl: "https://openrouter.ai/api/v1/models", models: ["openai/gpt-4o", "google/gemini-2.0-flash-exp", "anthropic/claude-3.5-sonnet"] },
+        gemini: { 
+            prompt: DEFAULT_CHAT_PROMPT, 
+            defaultModel: "gemini-2.5-flash", // 2025 Stable
+            canFetch: true, 
+            listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", 
+            models: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"] 
+        },
+        openrouter: { 
+            prompt: DEFAULT_CHAT_PROMPT, 
+            defaultModel: "openai/gpt-4o", 
+            canFetch: true, 
+            listUrl: "https://openrouter.ai/api/v1/models", 
+            models: ["google/gemini-2.5-flash", "openai/gpt-4o", "anthropic/claude-3.5-sonnet"] 
+        },
         mistral: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "mistral-large-latest", canFetch: true, listUrl: "https://api.mistral.ai/v1/models", models: ["mistral-large-latest"] },
         openai: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gpt-4o", canFetch: true, listUrl: "https://api.openai.com/v1/models", models: ["gpt-4o"] },
         groq: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "llama-3.3-70b-versatile", canFetch: true, listUrl: "https://api.groq.com/openai/v1/models", models: ["llama-3.3-70b-versatile"] },
@@ -583,8 +583,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
                 const lastChar = currLine.slice(-1);
                 const nextChar = nextLine.charAt(0);
                 const isSentenceEnd = /[.。！？?!:;：；]$/.test(currLine);
-                const isHeaderOrList = /^#/.test(currLine) || /^[-*] /.test(currLine) || /^#/.test(nextLine) || /^[-*] /.test(nextLine);
-
+                const isHeaderOrList = /^#/.test(currLine) || /^[-*] /.test(currLine);
                 if (isSentenceEnd || isHeaderOrList) { processedText += currLine + "\n"; } 
                 else {
                     if (lastChar === '-' && /[a-zA-Z]/.test(currLine.slice(-2, -1))) { processedText += currLine.slice(0, -1); } 
@@ -596,7 +595,6 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         return processedText.replace(/\n{3,}/g, "\n\n").trim();
     }
 
-    // 音效引擎喚醒函式 (強制確保有聲)
     function ensureAudioContext() {
         if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
         if (audioContext.state === 'suspended') {
@@ -604,7 +602,6 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         }
     }
     
-    // 綁定所有互動事件以喚醒音效
     ['click', 'touchstart', 'keydown'].forEach(evt => {
         document.addEventListener(evt, ensureAudioContext, { once: false, passive: true });
     });
@@ -627,10 +624,8 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         const key = e.key.toLowerCase();
         
         if (key === 'v') {
-            e.preventDefault();
-            ensureAudioContext();
-            if (isVoiceRecording) stopVoiceRecording();
-            else startVoiceRecording();
+            e.preventDefault(); ensureAudioContext();
+            if (isVoiceRecording) stopVoiceRecording(); else startVoiceRecording();
             return;
         }
 
@@ -644,12 +639,11 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             'p': { id: 'pause-send', type: 'click' },
             'k': { id: 'submit-btn', type: 'click' },
             'i': { id: 'user-input', type: 'focus' },
-            'r': { selector: '.latest-copy-btn', type: 'click' }
+            'r': { selector: '.mini-copy-btn', type: 'click' }
         };
 
         if (actions[key]) {
-            e.preventDefault();
-            ensureAudioContext();
+            e.preventDefault(); ensureAudioContext();
             let target;
             if (actions[key].id) target = document.getElementById(actions[key].id);
             else if (actions[key].selector) target = document.querySelector(actions[key].selector);
@@ -682,9 +676,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             document.getElementById('enter-to-send').checked = (savedEnter === null || savedEnter === 'true');
 
             const savedSpecifics = localStorage.getItem('specific_configs');
-            if (savedSpecifics) {
-                specificConfigs = JSON.parse(savedSpecifics);
-            }
+            if (savedSpecifics) { specificConfigs = JSON.parse(savedSpecifics); }
             updateConfigStatusDisplay();
 
             memoryPrompts.ocr = localStorage.getItem('custom_prompt_ocr') || DEFAULT_OCR_PROMPT;
@@ -706,7 +698,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             initVoiceButtonEvents();
 
         } catch (e) {
-            updateStatusBar("初始化錯誤: " + e.message, "error");
+            window.reportError("Init Error", e);
         }
     });
 
@@ -723,42 +715,26 @@ Translate the provided text FULLY into fluent Traditional Chinese.
     function setSpecificConfig(type) {
         const provider = document.getElementById('provider-select').value;
         const model = currentActiveModelId;
-        
         specificConfigs[type] = { provider, model };
         localStorage.setItem('specific_configs', JSON.stringify(specificConfigs));
-        
         const currentKey = document.getElementById('api-key').value;
-        if (currentKey) {
-            localStorage.setItem(`${provider}_key`, currentKey.trim());
-        }
-        
+        if (currentKey) localStorage.setItem(`${provider}_key`, currentKey.trim());
         updateConfigStatusDisplay();
-        showTransientStatus(`已將當前設定套用於: ${type === 'ocr' ? 'OCR' : '翻譯'}`);
+        showTransientStatus(`已設定 ${type} 專用模型`);
     }
 
     function clearSpecificConfigs() {
         specificConfigs = { ocr: null, translate: null };
         localStorage.removeItem('specific_configs');
         updateConfigStatusDisplay();
-        showTransientStatus("已清除專用設定，將跟隨主要設定");
+        showTransientStatus("已重置分工設定");
     }
 
     function updateConfigStatusDisplay() {
         const display = document.getElementById('config-status-display');
         let html = "<strong>目前配置：</strong><br>";
-        
-        if (specificConfigs.ocr) {
-            html += `• OCR PDF: <span class="highlight">${specificConfigs.ocr.provider} / ${specificConfigs.ocr.model}</span><br>`;
-        } else {
-            html += `• OCR PDF: 跟隨主要設定<br>`;
-        }
-        
-        if (specificConfigs.translate) {
-            html += `• 翻譯 PDF: <span class="highlight">${specificConfigs.translate.provider} / ${specificConfigs.translate.model}</span>`;
-        } else {
-            html += `• 翻譯 PDF: 跟隨主要設定`;
-        }
-        
+        html += specificConfigs.ocr ? `• OCR: <span class="highlight">${specificConfigs.ocr.provider} / ${specificConfigs.ocr.model}</span><br>` : `• OCR: 跟隨主要<br>`;
+        html += specificConfigs.translate ? `• 翻譯: <span class="highlight">${specificConfigs.translate.provider} / ${specificConfigs.translate.model}</span>` : `• 翻譯: 跟隨主要`;
         display.innerHTML = html;
     }
 
@@ -772,19 +748,12 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         
         if (type === 'start') { 
             oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(880, now); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.1); 
-            if (navigator.vibrate) navigator.vibrate(50); 
-        } 
-        else if (type === 'success') { 
+        } else if (type === 'success') { 
             oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(440, now); oscillator.frequency.exponentialRampToValueAtTime(880, now + 0.15); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.2); 
-        } 
-        else if (type === 'error') { 
+        } else if (type === 'error') { 
             oscillator.type = 'sawtooth'; oscillator.frequency.setValueAtTime(150, now); gainNode.gain.setValueAtTime(0.15, now); oscillator.start(now); oscillator.stop(now + 0.4); 
-            if (navigator.vibrate) navigator.vibrate([100, 50, 100]); 
-        }
-        else if (type === 'abort') {
+        } else if (type === 'abort') {
             oscillator.type = 'triangle'; oscillator.frequency.setValueAtTime(400, now); oscillator.frequency.linearRampToValueAtTime(200, now + 0.1); gainNode.gain.setValueAtTime(0.1, now); oscillator.start(now); oscillator.stop(now + 0.1);
-            const osc2 = audioContext.createOscillator(); const gain2 = audioContext.createGain(); osc2.connect(gain2); gain2.connect(audioContext.destination); osc2.type = 'triangle'; osc2.frequency.setValueAtTime(400, now + 0.15); osc2.frequency.linearRampToValueAtTime(200, now + 0.25); gain2.gain.setValueAtTime(0.1, now + 0.15); osc2.start(now + 0.15); osc2.stop(now + 0.25);
-            if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
         }
     }
 
@@ -796,7 +765,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         document.getElementById('upload-btn').innerText = "選擇檔案 (Alt+Shift+U)";
         document.getElementById('file-input').value = "";
         toggleExportButtons(false);
-        showTransientStatus("對話紀錄已清除 (新對話)", "info");
+        showTransientStatus("對話已清除", "info");
     }
 
     function handlePDFToolFileSelect() {
@@ -808,47 +777,33 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         input.value = ""; 
     }
     
-    // 【核心新增】偵測 Canvas 是否為空白 (全白或全透明)
+    // 【核心修正 5】圖像版 PDF 的空白頁檢測 (優化採樣版)
     function isCanvasBlank(canvas) {
-        const ctx = canvas.getContext('2d');
-        const width = canvas.width;
-        const height = canvas.height;
-        // 為了效能，我們只抽樣檢查 (檢查中間一條線和對角線)
-        // 更嚴謹的做法是檢查所有像素，但在大圖上會慢
-        // 這裡採用: 取得所有像素，若全為 0 (透明) 或 255 (白) 則視為空白
-        // 為避免效能問題，我們縮小 Canvas 來檢查
-        
         try {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = 50;
-            tempCanvas.height = 50;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(canvas, 0, 0, 50, 50);
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const w = canvas.width;
+            const h = canvas.height;
+            // 採樣點：中心十字線 + 對角線
+            const points = [];
+            for(let x=0; x<w; x+=50) points.push([x, h/2], [x, x*h/w], [x, h - x*h/w]);
+            for(let y=0; y<h; y+=50) points.push([w/2, y]);
             
-            const frame = tempCtx.getImageData(0, 0, 50, 50);
-            const len = frame.data.length;
             let hasContent = false;
-            
-            for (let i = 0; i < len; i += 4) {
-                const r = frame.data[i];
-                const g = frame.data[i+1];
-                const b = frame.data[i+2];
-                const a = frame.data[i+3];
-                
-                // 如果不是透明且不是全白 (容許一點誤差，例如 < 250)
-                if (a > 0 && (r < 250 || g < 250 || b < 250)) {
-                    hasContent = true;
+            for(const [px, py] of points) {
+                const data = ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
+                // 若不透明且顏色夠深 (R,G,B < 240)
+                if (data[3] > 0 && (data[0] < 240 || data[1] < 240 || data[2] < 240)) {
+                    hasContent = true; 
                     break;
                 }
             }
             return !hasContent;
         } catch(e) {
-            console.warn("Blank check failed", e);
-            return false; // 假設有內容
+            console.warn("Blank check skipped:", e);
+            return false; 
         }
     }
 
-    // 核心 PDF 處理邏輯 (重寫)
     async function processPDFTool(file) {
         if (typeof window.pdfjsLib === 'undefined') {
             alert("PDF 核心正在載入中，請稍候再試。");
@@ -862,43 +817,37 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         const needTranslate = document.getElementById('pdf-translate').checked;
 
         try {
-            updateStatusBar("請稍後，正在處理 PDF...", "busy");
-            
+            updateStatusBar("請稍後，正在分析 PDF...", "busy");
             let extractedText = "";
             let sourceMode = "text";
 
-            // 1. 嘗試本機提取 (除非強制 AI)
             if (!alwaysAI) {
                 const localText = await extractTextFromPDF(file);
-                const charCount = localText ? localText.replace(/\s/g, '').length : 0;
-                
-                if (charCount > 50) {
+                // 增加閾值判斷：若文字太少或亂碼比例過高，轉圖片
+                const cleanText = localText ? localText.replace(/\s/g, '') : "";
+                if (cleanText.length > 50 && !/[\uFFFD]/.test(cleanText.slice(0, 100))) {
                     extractedText = localText;
                     sourceMode = "text";
                     updateStatusBar("文字提取成功，準備處理...", "busy");
                 } else {
-                    sourceMode = "image"; // 文字太少，轉圖片
+                    sourceMode = "image";
                 }
             } else {
                 sourceMode = "image";
             }
 
-            // 2. 執行 AI 處理 (OCR 或 直接翻譯)
             await performAIProcessing(file, sourceMode, extractedText, needTranslate);
 
         } catch (e) {
-            console.error(e); updateStatusBar("錯誤: " + e.message, "error"); playAudioCue('error'); addMessage('error', "PDF 處理失敗: " + e.message);
+            window.reportError("PDF Processing Error", e);
         }
     }
 
-    // AI 處理核心 (串流 + 二階段分流 + 白紙偵測)
     async function performAIProcessing(file, sourceMode, textData, needTranslate) {
         const controller = new AbortController(); 
         let accumulatedText = "";
 
-        // === 階段一：獲取文字 (OCR 迴圈 或 直接使用提取文字) ===
         if (sourceMode === "image") {
-            // 設定 OCR 參數
             let ocrProvider = specificConfigs.ocr ? specificConfigs.ocr.provider : document.getElementById('provider-select').value;
             let ocrModel = specificConfigs.ocr ? specificConfigs.ocr.model : currentActiveModelId;
             let ocrApiKey = (ocrProvider === document.getElementById('provider-select').value) 
@@ -908,73 +857,63 @@ Translate the provided text FULLY into fluent Traditional Chinese.
 
             if (!ocrApiKey) throw new Error(`缺少 ${ocrProvider} (OCR) 的 API Key`);
 
-            // 準備 PDF
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer, cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/cmaps/', cMapPacked: true }).promise;
             const totalPages = pdf.numPages;
 
-            // 串流處理：一頁一頁轉
-            updateVisualProgress(true, `OCR 處理中: 0/${totalPages}`);
+            // 減少進度條更新頻率，避免刷屏
+            updateVisualProgress(true, `OCR 處理中 (共 ${totalPages} 頁)`);
             
             for (let i = 1; i <= totalPages; i++) {
-                // 更新視覺進度 (不觸發語音)
-                document.getElementById('visual-progress').innerText = `OCR 正在識別第 ${i} / ${totalPages} 頁...`;
+                if (i % 5 === 0) document.getElementById('visual-progress').innerText = `OCR 進度: ${i} / ${totalPages}`;
                 
-                // 1. 轉圖片
                 const page = await pdf.getPage(i);
                 const viewportRaw = page.getViewport({ scale: 1.0 });
-                const maxDim = 2048;
-                const scale = Math.min(maxDim / Math.max(viewportRaw.width, viewportRaw.height), 2.0); // 限制最大解析度
+                
+                // 【核心修正 3】智慧縮放 (Smart Resizing) - 限制 maxDim 為 1536
+                const maxDim = 1536; 
+                const scale = Math.min(maxDim / Math.max(viewportRaw.width, viewportRaw.height), 2.0);
                 const viewport = page.getViewport({ scale });
+                
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width; canvas.height = viewport.height;
                 await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
                 
-                // 【核心修正】白紙偵測
+                // 【核心修正 5】空白頁檢測
                 if (isCanvasBlank(canvas)) {
-                    accumulatedText += `## [Page ${i}]\n(警告：此頁面渲染為空白，可能是 PDF 加密或字型問題，已跳過)\n\n`;
-                    canvas.width = 0; canvas.height = 0; canvas.remove();
-                    continue; // 跳過 AI 請求
+                    accumulatedText += `## [Page ${i}]\n(空白頁已跳過)\n\n`;
+                    canvas.remove();
+                    continue; 
                 }
 
-                const imgBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                // 使用較低品質 JPEG 節省頻寬
+                const imgBase64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
 
-                // 2. 呼叫 AI OCR
                 let retry = 0;
                 let pageText = "";
                 while(retry < 3) {
                     try {
-                        pageText = await callAI(ocrProvider, "Transcribe this page exactly.", imgBase64, "image/jpeg", controller.signal, ocrModel, ocrApiKey, ocrSystemPrompt);
-                        // 【核心修正】AI 空回應偵測 (在 callAI 內部已做，這裡再確認一次)
-                        if (!pageText || pageText.trim().length === 0) {
-                            pageText = "(警告：AI 未能識別此頁內容)";
-                        }
+                        pageText = await callAI(ocrProvider, "Transcribe EXACTLY.", imgBase64, "image/jpeg", controller.signal, ocrModel, ocrApiKey, ocrSystemPrompt);
+                        if (!pageText || pageText.trim().length === 0) pageText = "(AI 未能識別)";
                         break;
                     } catch(e) {
                         retry++;
                         console.warn(`Page ${i} retry ${retry}`, e);
-                        if (retry >= 3) {
-                            pageText = `(識別失敗: ${e.message})`;
-                        }
-                        await sleep(2000);
+                        if (retry >= 3) pageText = `(識別失敗: ${e.message})`;
+                        await sleep(1500);
                     }
                 }
                 
-                // 3. 累積並釋放記憶體
                 accumulatedText += `## [Page ${i}]\n${smartMergeLines(pageText)}\n\n`;
-                
-                // 清理
-                canvas.width = 0; canvas.height = 0; canvas.remove();
-                await sleep(500); // 讓瀏覽器喘口氣
+                canvas.remove();
+                await sleep(200); 
             }
             updateVisualProgress(false);
 
         } else {
-            // 已經有文字 (Text Mode)
             accumulatedText = textData; 
         }
 
-        // === 階段二：翻譯 (若需要) ===
         if (needTranslate) {
             let transProvider = specificConfigs.translate ? specificConfigs.translate.provider : document.getElementById('provider-select').value;
             let transModel = specificConfigs.translate ? specificConfigs.translate.model : currentActiveModelId;
@@ -982,37 +921,28 @@ Translate the provided text FULLY into fluent Traditional Chinese.
                               ? document.getElementById('api-key').value 
                               : localStorage.getItem(`${transProvider}_key`);
             
-            updateStatusBar("正在進行全文翻譯...", "busy");
+            updateStatusBar("正在翻譯全文...", "busy");
             const transInput = `[SOURCE TEXT]:\n${accumulatedText}`;
             const finalRes = await callAI(transProvider, transInput, null, null, controller.signal, transModel, transApiKey, memoryPrompts.translate);
             
             addMessage('assistant', finalRes);
         } else {
-            // 不需要翻譯，直接輸出整理後的文字
             updateStatusBar("處理完成", "ready");
             addMessage('assistant', accumulatedText);
         }
 
         playAudioCue('success'); 
         updateStatusBar("任務完成", "ready");
-        
-        // 完成後才將焦點移至結果區
         setTimeout(() => {
             const output = document.getElementById('chat-output');
             if(output.lastChild) output.lastChild.focus();
         }, 500);
     }
 
-    // 輔助函式：更新視覺進度條 (不干擾語音)
     function updateVisualProgress(show, text="") {
         const el = document.getElementById('visual-progress');
-        if (show) {
-            el.classList.add('active');
-            el.innerText = text;
-        } else {
-            el.classList.remove('active');
-            el.innerText = "";
-        }
+        if (show) { el.classList.add('active'); el.innerText = text; } 
+        else { el.classList.remove('active'); el.innerText = ""; }
     }
 
     async function extractTextFromPDF(file) {
@@ -1025,8 +955,6 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             });
             const pdf = await loadingTask.promise;
             let fullText = "";
-            
-            // 簡單提取，不顯示詳細進度以減少語音干擾
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const content = await page.getTextContent();
@@ -1072,31 +1000,26 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             
             recognition.onerror = (e) => { 
                 if (e.error !== 'aborted' && e.error !== 'no-speech') {
-                    showTransientStatus('語音錯誤: ' + e.error, 'error'); 
+                    showTransientStatus('語音錯誤', 'error'); 
                     playAudioCue('error');
                 }
                 stopVoiceInputUI();
             };
             
             recognition.onend = () => { 
-                if (isVoiceRecording) {
-                    playAudioCue('abort'); 
-                    showTransientStatus('錄音已中斷 (系統限制)', 'error');
-                }
+                if (isVoiceRecording) { playAudioCue('abort'); }
                 stopVoiceInputUI();
             };
         }
     }
 
     async function startVoiceRecording() {
-        ensureAudioContext(); // 再次確保音效
+        ensureAudioContext(); 
         if (isVoiceRecording) return;
         const engine = document.getElementById('voice-engine').value;
         
         if (engine === 'browser') {
-            if (recognition) {
-                try { recognition.start(); } catch(e) { console.error(e); }
-            }
+            if (recognition) { try { recognition.start(); } catch(e) {} }
         } else {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1120,7 +1043,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
 
     function stopVoiceRecording() {
         if (!isVoiceRecording) return;
-        ensureAudioContext(); // 確保結束音效
+        ensureAudioContext(); 
         const engine = document.getElementById('voice-engine').value;
         playAudioCue('success');
         isVoiceRecording = false; 
@@ -1152,7 +1075,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             const res = await fetch(engine==='openai'?"https://api.openai.com/v1/audio/transcriptions":"https://api.groq.com/openai/v1/audio/transcriptions", { method:'POST', headers:{'Authorization':`Bearer ${apiKey}`}, body:fd });
             const data = await res.json();
             if (data.text) { document.getElementById('user-input').value += (document.getElementById('user-input').value ? " " : "") + data.text; showTransientStatus("完成"); }
-        } catch(e) { showTransientStatus("錯誤", 'error'); playAudioCue('error'); }
+        } catch(e) { window.reportError("Whisper API Error", e); }
         finally { stopVoiceInputUI(); }
     }
 
@@ -1163,14 +1086,13 @@ Translate the provided text FULLY into fluent Traditional Chinese.
     
     function updateStatusBar(t, s='ready') { 
         const b = document.getElementById('status-bar'); 
-        b.innerText = t; 
-        b.className = s; 
-        // 只有錯誤訊息需要主動打斷朗讀，其他狀態用 polite
+        b.innerText = t; b.className = s; 
         b.setAttribute('aria-live', s === 'error' ? 'assertive' : 'polite');
     }
     
     function showReadyStatus() { updateStatusBar("準備就緒"); }
     function showTransientStatus(m, t='success') { updateStatusBar(m, t==='error'?'error':'ready'); setTimeout(()=>{ if(!document.getElementById('status-bar').classList.contains('busy')) showReadyStatus(); }, 3000); }
+    
     function addMessage(role, content) {
         const div = document.createElement('div'); div.className = `message ${role}`; div.tabIndex = -1;
         div.innerHTML = `<h1 class="msg-heading">${role==='user'?'輸入問題：':(role==='error'?'發生錯誤：':'回應結果：')}</h1><div class="markdown-body">${role==='user'?content:DOMPurify.sanitize(marked.parse(content))}</div>`;
@@ -1186,12 +1108,9 @@ Translate the provided text FULLY into fluent Traditional Chinese.
     function handleProviderChange(save=true) {
         const p = document.getElementById('provider-select').value; const c = PROVIDERS[p];
         document.getElementById('api-key').value = localStorage.getItem(`${p}_key`) || "";
-        
         memoryPrompts.chat = localStorage.getItem(`${p}_prompt`) || c.prompt;
         
-        if (currentEditingMode === 'chat') {
-            document.getElementById('system-prompt').value = memoryPrompts.chat;
-        }
+        if (currentEditingMode === 'chat') document.getElementById('system-prompt').value = memoryPrompts.chat;
 
         document.getElementById('openrouter-settings').classList.toggle('hidden', p!=='openrouter');
         allCurrentModels = JSON.parse(localStorage.getItem(`${p}_model_list`)) || c.models;
@@ -1223,7 +1142,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             else if(p==='gemini') list=(await(await fetch(PROVIDERS[p].listUrl.replace('{KEY}',k))).json()).models.filter(m=>m.supportedGenerationMethods?.includes("generateContent")).map(m=>m.name.replace("models/",""));
             else list=(await(await fetch(PROVIDERS[p].listUrl, {headers:{'Authorization':`Bearer ${k}`}})).json()).data.map(m=>m.id);
             if(list.length) { localStorage.setItem(`${p}_model_list`, JSON.stringify(list)); allCurrentModels=list; handleModelFilter(); showTransientStatus("已更新"); }
-        } catch(e) { showTransientStatus("更新失敗", 'error'); } finally { btn.innerText="更新"; btn.disabled=false; }
+        } catch(e) { window.reportError("更新模型列表失敗", e); } finally { btn.innerText="更新"; btn.disabled=false; }
     }
     function handleModelSelectChange() {
         const s = document.getElementById('model-select');
@@ -1238,12 +1157,9 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         const m = document.getElementById('model-select').value==="CUSTOM" ? document.getElementById('custom-model-input').value : document.getElementById('model-select').value;
         
         memoryPrompts[currentEditingMode] = document.getElementById('system-prompt').value;
-
         localStorage.setItem(`${p}_prompt`, memoryPrompts.chat);
-        
         localStorage.setItem('custom_prompt_ocr', memoryPrompts.ocr);
         localStorage.setItem('custom_prompt_translate', memoryPrompts.translate);
-
         localStorage.setItem(`${p}_key`, document.getElementById('api-key').value.trim());
         localStorage.setItem(`${p}_model`, m); currentActiveModelId = m;
         localStorage.setItem('timeout_setting', document.getElementById('timeout-setting').value);
@@ -1254,23 +1170,21 @@ Translate the provided text FULLY into fluent Traditional Chinese.
 
     function restoreDefaults() {
         const p = document.getElementById('provider-select').value; 
-        
         memoryPrompts.chat = PROVIDERS[p].prompt;
         memoryPrompts.ocr = DEFAULT_OCR_PROMPT;
         memoryPrompts.translate = DEFAULT_TRANSLATE_PROMPT;
-
         localStorage.removeItem(`${p}_prompt`);
         localStorage.removeItem('custom_prompt_ocr');
         localStorage.removeItem('custom_prompt_translate');
-
         document.getElementById('system-prompt').value = memoryPrompts[currentEditingMode];
-        
         localStorage.removeItem(`${p}_model`); 
         handleProviderChange(true); 
         showTransientStatus("已還原預設值");
     }
 
     function copyResult() { navigator.clipboard.writeText(document.getElementById('chat-output').innerText).then(()=>showTransientStatus("已複製")); }
+    function copyErrorLog() { navigator.clipboard.writeText(document.getElementById('error-log-area').value).then(()=>showTransientStatus("錯誤日誌已複製")); }
+    
     function exportChat(fmt) {
         const c = document.getElementById('chat-output');
         const b = new Blob([fmt==='html'?`<html><body>${c.innerHTML}</body></html>`:c.innerText], {type:fmt==='html'?'text/html':'text/plain'});
@@ -1282,20 +1196,18 @@ Translate the provided text FULLY into fluent Traditional Chinese.
     function readFileAsBase64(f) { return new Promise((r,j)=>{const rd=new FileReader(); rd.onload=()=>r(rd.result.split(',')[1]); rd.onerror=j; rd.readAsDataURL(f);}); }
 
     async function handleSubmit(e) {
-        e.preventDefault(); 
-        ensureAudioContext(); // 確保音效
-        
+        e.preventDefault(); ensureAudioContext();
         const txt = document.getElementById('user-input').value.trim();
         if(!txt && !selectedFile) return showTransientStatus("請輸入", 'error');
         
         playAudioCue('start'); updateStatusBar("處理中...", 'busy');
         const btn = document.getElementById('submit-btn'); btn.disabled=true;
         const ctl = new AbortController(); const tm = setTimeout(()=>ctl.abort(), document.getElementById('timeout-setting').value*1000);
+        
         try {
             let input = txt; let fileData = null; let mime = null; let skipFile = false;
             if(selectedFile) {
                 if(selectedFile.type==='application/pdf') {
-                    // 一般對話中的 PDF，使用提取模式
                     const pdfText = await extractTextFromPDF(selectedFile);
                     if(pdfText) { input=`[PDF CONTENT]:\n${pdfText}\n\n${txt}`; skipFile=true; }
                 } else { 
@@ -1307,15 +1219,10 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             document.getElementById('user-input').value=""; document.getElementById('upload-btn').innerText="選擇檔案 (Alt+Shift+U)"; selectedFile=null;
             addMessage('user', txt||"[檔案]"); 
             const ai = addMessage('assistant', res); 
-            
-            // 對話結束後，將焦點移至最後的回應，並播放成功音效
-            setTimeout(() => {
-                 ai.focus();
-            }, 100);
-            
+            setTimeout(() => { ai.focus(); }, 100);
             chatHistory.push({role:'user',content:input}); chatHistory.push({role:'assistant',content:res});
             playAudioCue('success'); showReadyStatus();
-        } catch(e) { addMessage('error', e.message); playAudioCue('error'); showReadyStatus(); } finally { clearTimeout(tm); btn.disabled=false; }
+        } catch(e) { window.reportError("Submit Error", e); } finally { clearTimeout(tm); btn.disabled=false; }
     }
 
     async function callAI(p, txt, file, mime, sig, ovModel, ovKey, ovSystemPrompt) {
@@ -1342,8 +1249,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         } else {
             if (p === 'openrouter') {
                 url = "https://openrouter.ai/api/v1/chat/completions";
-                // 【關鍵修正】強制偽裝 Referer 以通過 CORS 檢查
-                headers['HTTP-Referer'] = 'https://cyeric100-source.github.io/Traditional-Chinese-ai-vision-helper/';
+                headers['HTTP-Referer'] = 'https://ai-vision-helper.app'; // CORS requirement
                 headers['X-Title'] = 'AI Vision Helper';
                 if(document.getElementById('openrouter-web-search').checked) body.plugins = [{id:"web"}];
             } else if (p === 'mistral') {
@@ -1357,7 +1263,6 @@ Translate the provided text FULLY into fluent Traditional Chinese.
             }
 
             let content = [];
-            // 標準 OpenAI 格式
             if (file) {
                 content.push({type:"text", text:txt});
                 content.push({type:"image_url", image_url:{url:`data:${mime};base64,${file}`}});
@@ -1368,15 +1273,16 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         }
         
         const r = await fetch(url, {method:'POST', headers, body:JSON.stringify(body), signal:sig});
-        if(!r.ok) throw new Error(await r.text()); const d = await r.json();
-        
-        // 【核心新增】AI 空回應偵測
+        if(!r.ok) {
+            const errText = await r.text();
+            throw new Error(`API Error (${r.status}): ${errText}`);
+        }
+        const d = await r.json();
         let resText = p==='gemini' ? (d.candidates?.[0]?.content?.parts?.[0]?.text) : (d.choices?.[0]?.message?.content);
         
         if (!resText || resText.trim().length === 0) {
-            throw new Error(`AI 回應為空 (Empty Response)。\n可能原因：\n1. 模型 (${m}) 不支援視覺輸入 (請更換具備 Vision 能力的模型)。\n2. 圖片內容被 AI 安全過濾器攔截。\n3. 網路連線問題。`);
+            throw new Error("AI 回應為空。可能原因：模型不支援視覺輸入或內容被過濾。");
         }
-        
         return resText;
     }
 </script>
