@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 視障助理 (極簡全能版 - 2025 路徑修正版)</title>
+    <title>AI 視障助理 (極簡全能版 - 2025 穩定修正版)</title>
     
     <!-- 引入 Marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/lib/marked.umd.min.js"></script>
@@ -11,16 +11,16 @@
     <!-- 引入 DOMPurify 進行 HTML 消毒 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
-    <!-- 【核心】PDF.js v5.4.449 : 修正檔名路徑 (.mjs) + 雙重 CDN 備援 -->
+    <!-- 【核心】PDF.js v5.4.449 : 改用 Legacy 版本以確保 Blob Worker 相容性 -->
     <script type="module">
-        // 定義主 CDN 與備用 CDN (修正為 .mjs，移除 .min 以符合 v5 標準)
+        // 定義主 CDN 與備用 CDN (使用 legacy/build 路徑)
         const PDF_URLS = [
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.mjs',
-            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.mjs'
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.mjs',
+            'https://unpkg.com/pdfjs-dist@5.4.449/legacy/build/pdf.mjs'
         ];
         const WORKER_URLS = [
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.mjs',
-            'https://unpkg.com/pdfjs-dist@5.4.449/build/pdf.worker.mjs'
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.mjs',
+            'https://unpkg.com/pdfjs-dist@5.4.449/legacy/build/pdf.worker.mjs'
         ];
 
         async function loadPdfLib() {
@@ -37,7 +37,7 @@
                         const workerScript = await response.text();
                         const blob = new Blob([workerScript], { type: "application/javascript" });
                         lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-                        console.log(`PDF Lib loaded from ${PDF_URLS[i]} (Blob Worker)`);
+                        console.log(`PDF Lib loaded from ${PDF_URLS[i]} (Legacy/Blob Mode)`);
                     } catch (e) {
                         console.warn("Blob load failed, using direct URL.", e);
                         lib.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -304,7 +304,7 @@
 </div>
 
 <div class="container">
-    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 路徑修正版)</h1>
+    <h1 class="app-title">AI 視障助理 (極簡全能版 - 2025 穩定修正版)</h1>
 
     <!-- 設定區 -->
     <details id="settings-area">
@@ -542,7 +542,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
 4. **INPUT**: The user provides text that may have broken lines. Fix them while translating.
 `;
 
-    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v4_paths";
+    const PROMPT_VERSION_KEY = "prompt_version_2025_fixed_v5_legacy_chk";
     
     const PROVIDERS = {
         gemini: { prompt: DEFAULT_CHAT_PROMPT, defaultModel: "gemini-2.0-flash-exp", canFetch: true, listUrl: "https://generativelanguage.googleapis.com/v1beta/models?key={KEY}", models: ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"] },
@@ -807,6 +807,46 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         }
         input.value = ""; 
     }
+    
+    // 【核心新增】偵測 Canvas 是否為空白 (全白或全透明)
+    function isCanvasBlank(canvas) {
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        // 為了效能，我們只抽樣檢查 (檢查中間一條線和對角線)
+        // 更嚴謹的做法是檢查所有像素，但在大圖上會慢
+        // 這裡採用: 取得所有像素，若全為 0 (透明) 或 255 (白) 則視為空白
+        // 為避免效能問題，我們縮小 Canvas 來檢查
+        
+        try {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 50;
+            tempCanvas.height = 50;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0, 50, 50);
+            
+            const frame = tempCtx.getImageData(0, 0, 50, 50);
+            const len = frame.data.length;
+            let hasContent = false;
+            
+            for (let i = 0; i < len; i += 4) {
+                const r = frame.data[i];
+                const g = frame.data[i+1];
+                const b = frame.data[i+2];
+                const a = frame.data[i+3];
+                
+                // 如果不是透明且不是全白 (容許一點誤差，例如 < 250)
+                if (a > 0 && (r < 250 || g < 250 || b < 250)) {
+                    hasContent = true;
+                    break;
+                }
+            }
+            return !hasContent;
+        } catch(e) {
+            console.warn("Blank check failed", e);
+            return false; // 假設有內容
+        }
+    }
 
     // 核心 PDF 處理邏輯 (重寫)
     async function processPDFTool(file) {
@@ -851,7 +891,7 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         }
     }
 
-    // AI 處理核心 (串流 + 二階段分流)
+    // AI 處理核心 (串流 + 二階段分流 + 白紙偵測)
     async function performAIProcessing(file, sourceMode, textData, needTranslate) {
         const controller = new AbortController(); 
         let accumulatedText = "";
@@ -889,6 +929,14 @@ Translate the provided text FULLY into fluent Traditional Chinese.
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width; canvas.height = viewport.height;
                 await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                
+                // 【核心修正】白紙偵測
+                if (isCanvasBlank(canvas)) {
+                    accumulatedText += `## [Page ${i}]\n(警告：此頁面渲染為空白，可能是 PDF 加密或字型問題，已跳過)\n\n`;
+                    canvas.width = 0; canvas.height = 0; canvas.remove();
+                    continue; // 跳過 AI 請求
+                }
+
                 const imgBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
                 // 2. 呼叫 AI OCR
@@ -897,10 +945,17 @@ Translate the provided text FULLY into fluent Traditional Chinese.
                 while(retry < 3) {
                     try {
                         pageText = await callAI(ocrProvider, "Transcribe this page exactly.", imgBase64, "image/jpeg", controller.signal, ocrModel, ocrApiKey, ocrSystemPrompt);
+                        // 【核心修正】AI 空回應偵測 (在 callAI 內部已做，這裡再確認一次)
+                        if (!pageText || pageText.trim().length === 0) {
+                            pageText = "(警告：AI 未能識別此頁內容)";
+                        }
                         break;
                     } catch(e) {
                         retry++;
                         console.warn(`Page ${i} retry ${retry}`, e);
+                        if (retry >= 3) {
+                            pageText = `(識別失敗: ${e.message})`;
+                        }
                         await sleep(2000);
                     }
                 }
@@ -1314,7 +1369,15 @@ Translate the provided text FULLY into fluent Traditional Chinese.
         
         const r = await fetch(url, {method:'POST', headers, body:JSON.stringify(body), signal:sig});
         if(!r.ok) throw new Error(await r.text()); const d = await r.json();
-        return p==='gemini' ? (d.candidates?.[0]?.content?.parts?.[0]?.text||"無回應") : (d.choices?.[0]?.message?.content||"無回應");
+        
+        // 【核心新增】AI 空回應偵測
+        let resText = p==='gemini' ? (d.candidates?.[0]?.content?.parts?.[0]?.text) : (d.choices?.[0]?.message?.content);
+        
+        if (!resText || resText.trim().length === 0) {
+            throw new Error(`AI 回應為空 (Empty Response)。\n可能原因：\n1. 模型 (${m}) 不支援視覺輸入 (請更換具備 Vision 能力的模型)。\n2. 圖片內容被 AI 安全過濾器攔截。\n3. 網路連線問題。`);
+        }
+        
+        return resText;
     }
 </script>
 </body>
